@@ -1,81 +1,82 @@
 # Podcasts Transcribe
 
-Скрипт для автоматической расшифровки подкастов (транскрибации) с разделением по спикерам (диаризацией). Интегрирован с моделями Whisper (MLX) и Pyannote Audio, оптимизирован для работы на Apple Silicon.
+A script for automatic podcast transcription with speaker diarization. Integrated with Whisper (MLX) and Pyannote Audio models, heavily optimized for Apple Silicon (MPS).
 
-## Основные функции
+## Key Features
 
-*   **⚡️ MLX Whisper Транскрибация:** Использует мощную модель `mlx-whisper-large-v3-ru-podlodka`, работающую напрямую на графическом ускорителе Apple Silicon (MPS) для экстремально быстрой работы.
-*   **🗣 Распознавание спикеров (Diarization):** Интегрирована новейшая open-source модель `pyannote/speaker-diarization-3.1`. Скрипт интеллектуально склеивает пословные таймкоды Whisper с таймкодами Pyannote, чтобы выдавать текст вида: `[00:01:23] ИМЯ_СПИКЕРА: текст...`.
-*   **🧠 Кросс-эпизодная память на голоса:**
-    *   **Авто-серии:** Скрипт парсит префиксы из имен файлов (например, в файлах `rt_podcast_10.mp3` и `rt_podcast_11.mp3` будет выделена общая база спикеров серии `rt_podcast`).
-    *   **Запоминание:** Цифровые слепки голосов (embeddings) записываются в локальную базу данных. Программа сама узнает ведущих в новых выпусках.
-    *   **Эволюция голоса (EMA):** Скрипт подмешивает 10% нового голоса в эталонную базу при каждом совпадении. Это спасает качество при смене микрофона или взрослении диктора.
-    *   **Авто-слияние:** Если нейросеть ошиблась и создала дубликат профиля, просто задайте ему такое же человеческое имя в локальном конфиге подкаста. При следующем запуске скрипт автоматически усреднит их голоса и удалит дубликат!
-*   **💾 Кеширование аудио:** Встроенный LRU-кэш для сконвертированных `wav` файлов спасает от повторных прогонов `ffmpeg`.
+*   **⚡️ MLX Whisper Transcription:** Utilizes the powerful `mlx-whisper-large-v3-ru-podlodka` model running directly on Apple Silicon (MPS) for extremely fast processing.
+*   **🗣 Speaker Recognition (Diarization):** Integrates the latest open-source `pyannote/speaker-diarization-3.1` model. The script intelligently merges Whisper's word-level timestamps with Pyannote's speaker segments to produce outputs like: `[00:01:23] SPEAKER_NAME: text...`.
+*   **🧠 Cross-Episode Voice Memory:**
+    *   **Auto-Series:** The script parses series prefixes from filenames (e.g., `rt_podcast_10.mp3` and `rt_podcast_11.mp3` will share the `rt_podcast` speaker database).
+    *   **Memorization:** Digital voice embeddings are saved in a local database. The program automatically recognizes hosts in new episodes.
+    *   **Voice Evolution (EMA):** The script blends 10% of the new voice into the reference database upon each match. This maintains accuracy even if a speaker changes their microphone, voice ages, or has a cold.
+    *   **Auto-Merge Duplicates:** If the neural network makes a mistake and creates a duplicate profile, simply assign it the same human name in the local podcast config. On the next run, the script will automatically average their voices and delete the duplicate!
+*   **💾 Audio Caching:** Built-in LRU cache for converted `wav` files prevents redundant `ffmpeg` conversions on repeated runs.
 
-## Структура проекта
+## Project Structure
 
 ```text
 podcasts_transcribe/
-├── input/                  <-- Кладите сюда MP3, M4A, FLAC, WAV
-├── output/                 <-- Забирайте отсюда готовые TXT
-├── models/                 <-- Папка скачанных нейросетей
-├── speakers/               <-- Базы голосов (вектора + YAML-файлы имен)
-├── .cache/                 <-- Папка кэша аудио
-├── config.yaml             <-- Главные настройки (пороги, размеры кэша)
-└── transcribe.py           <-- Скрипт запуска
+├── input/                  <-- Put your MP3, M4A, FLAC, WAV here
+├── output/                 <-- Get your finished TXT transcripts here
+├── models/                 <-- Downloaded ML models folder
+├── speakers/               <-- Voice databases (vectors + YAML configs)
+├── .cache/                 <-- Audio cache folder
+├── config.yaml             <-- Global settings (thresholds, cache size)
+└── transcribe.py           <-- Main launcher script
 ```
 
-## Установка
+## Installation
 
-1. **Системные зависимости:** Убедитесь, что установлен утилита `ffmpeg`. На Mac: `brew install ffmpeg`.
-2. **Python:** Создайте виртуальное окружение (Python 3.9+) и установите пакеты из `requirements.txt`:
+1. **System Dependencies:** Ensure the `ffmpeg` utility is installed. On Mac: `brew install ffmpeg`.
+2. **Python:** Create a virtual environment (Python 3.9+) and install packages from `requirements.txt`:
    ```bash
    python -m venv .venv
    source .venv/bin/activate
    pip install -r requirements.txt
    ```
-3. **Ключ доступа к моделям Pyannote:**
-    * Модели Pyannote Audio являются открытыми, но требуют согласия с правилами на HuggingFace.
-    * Перейдите на [speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) и нажмите "Agree".
-    * Перейдите на [segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0) и нажмите "Agree".
-    * Создайте HF Token в настройках аккаунта HuggingFace.
-4. Создайте файл `.env` в корне проекта и впишите туда токен:
+3. **Pyannote Models Access Token:**
+    * Pyannote Audio models are open-source but require accepting terms on HuggingFace.
+    * Visit [speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) and click "Agree".
+    * Visit [segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0) and click "Agree".
+    * Create a User Access Token in your HuggingFace account settings.
+4. Create a `.env` file in the project root and add the token:
     ```env
     # .env
-    HF_TOKEN="твой_hf_токен_здесь"
+    HF_TOKEN="your_hf_token_here"
     ```
 
-## Использование (Быстрый старт)
+## Usage (Quick Start)
 
-1. Закиньте любые медиа-файлы в папку `input/`.
-2. Запустите скрипт:
+1. Drop any media files into the `input/` folder.
+2. Run the script:
    ```bash
    python transcribe.py
    ```
-3. Заберите готовый текстовый документ из папки `output/`!
+3. Pick up the ready text document from the `output/` folder!
 
-*(Опционально) Для тестов:* Чтобы прогнать только первые 2 минуты аудио:
+*(Optional) For Testing:* To process only the first 2 minutes of the audio:
 ```bash
 python transcribe.py --test 120
 ```
 
-## Как переименовать `GLOBAL_SPEAKER` в реальное имя?
+## How to rename `GLOBAL_SPEAKER` to a real name?
 
-1. Когда прогон `transcribe.py` для подкаста завершится, зайдите в папку `speakers/название_вашей_серии/`.
-2. Откройте файл `config.yaml`.
-3. Присвойте реальные имена:
+1. Once the `transcribe.py` run for a podcast finishes, go to the `speakers/your_series_name/` folder.
+2. Open the `config.yaml` file.
+3. Assign the real human names:
     ```yaml
-    GLOBAL_SPEAKER_1: Игорь
-    GLOBAL_SPEAKER_2: Umputun
+    GLOBAL_SPEAKER_1: John Doe
+    GLOBAL_SPEAKER_2: Alice
     ```
-4. В следующих подкастах программа автоматически будет подставлять "Игорь" и "Umputun". 
-5. *Ошибки распознавания?* Если в новом подкасте появился `GLOBAL_SPEAKER_5`, и это на самом деле был Игорь с глухим микрофоном — просто переименуйте `GLOBAL_SPEAKER_5: Игорь`. Программа автоматически сольет их голоса в единую базу!
+4. In future podcast episodes, the program will automatically substitute "John Doe" and "Alice".
+5. *Recognition Errors?* If a new podcast introduces `GLOBAL_SPEAKER_5`, and it was actually John with a muffled microphone — just rename `GLOBAL_SPEAKER_5: John Doe`. The program will automatically merge their voices into a single database!
 
-## Глобальные настройки (config.yaml)
+## Global Settings (config.yaml)
 
-В корне лежит `config.yaml` с комментариями на русском. Там можно накрутить:
-- Защиту от галлюцинаций Whisper.
-- Чувствительность совпадения голосов Pyannote (0.0 — 1.0).
-- Лимиты на максимальный вес гигабайт в папке кэша аудио.
+The root folder contains `config.yaml` with detailed English comments. In it, you can tweak:
+- Whisper hallucination defenses.
+- Pyannote voice matching sensitivity (0.0 — 1.0).
+- Automatic duplicate merging.
+- Maximum megabyte limits and TTL for the audio cache folder.
 
