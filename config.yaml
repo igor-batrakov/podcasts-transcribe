@@ -60,3 +60,29 @@ cache:
   max_size_mb: 1000
   # File Time-to-Live (in Days). Files older than this threshold without being accessed will be deleted from cache.
   max_age_days: 1
+
+# -----------------
+# POST-PROCESSING SETTINGS (LLM Integration)
+# -----------------
+post_processing:
+  # Enable or disable sending the final transcript to a Large Language Model for formatting and summarization.
+  enabled: false
+  
+  # Select the provider: "ollama" (Local, FREE), "openai" (Cloud API), "anthropic" (Cloud API)
+  # IMPORTANT: For "openai" and "anthropic", you must set OPENAI_API_KEY or ANTHROPIC_API_KEY in the .env file.
+  # For "ollama", you must have the Ollama app installed and running on your Mac.
+  provider: ollama
+  
+  # The specific model to use (e.g., 'llama3.1', 'gpt-4o-mini', 'claude-3-5-sonnet-latest')
+  model: llama3.1
+  
+  # The system prompt telling the AI how to format your text. '{text}' will be replaced by the raw transcript.
+  prompt_template: >
+    You are an expert podcast editor. 
+    1. Fix the punctuation of this Russian transcript.
+    2. Format the text into readable paragraphs for a blog post.
+    3. If there are GLOBAL_SPEAKER_X tags, try to infer their real names from the conversation context and replace the tags quietly.
+    4. Provide a short 3-sentence summary of the episode at the very beginning of your response.
+    
+    Here is the transcript:
+    {text}

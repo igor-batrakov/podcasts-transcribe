@@ -10,6 +10,7 @@ from config_loader import load_global_config
 from utils import get_series_name, get_unique_filename
 from audio_converter import convert_to_wav
 from speaker_manager import load_series_config, load_series_embeddings, save_series_config, save_series_embeddings, get_global_speaker_mapping, get_speaker, merge_duplicate_speakers
+from post_processing import run_post_processing
 
 load_dotenv()
 
@@ -150,9 +151,21 @@ def process_podcasts(time_limit=None):
                     speaker = get_speaker(diarization, start_time, end_time, speaker_mapping)
                     
                     line = f"[{start_fmt} -> {end_fmt}] {speaker}: {text}\n"
-                    f.write(line)
             
-            print(f"   [DONE] Result saved to {output_txt}")
+            print(f"   [DONE] Raw transcription saved to {output_txt}")
+            
+            # 4. LLM Post-Processing Magic
+            if global_config.get("post_processing", {}).get("enabled", False):
+                with open(output_txt, "r", encoding="utf-8") as f:
+                    raw_text = f.read()
+                
+                formatted_text = run_post_processing(raw_text, global_config)
+                
+                final_output_path = os.path.join(output_dir, f"{base_name}_formatted.md")
+                with open(final_output_path, "w", encoding="utf-8") as f:
+                    f.write(formatted_text)
+                    
+                print(f"   [DONE] LLM formatted transcript saved to {final_output_path}")
             
         except Exception as e:
             print(f"   [ERROR] Failed to process file {audio_path}: {e}")
