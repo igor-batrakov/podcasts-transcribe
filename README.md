@@ -102,6 +102,9 @@ python transcribe.py --test 120
 - **Автоматическое слияние дубликатов**: Включено по умолчанию (`auto_merge_duplicates: true`). 
 - **Лимиты кэша (`max_size_mb` / `max_age_days`)**: Задайте сколько мегабайт и дней могут жить сконвертированные аудиофайлы во временной папке, чтобы не забивать диск.
 
+## Лицензия
+
+Этот проект распространяется по лицензии **MIT**. Подробности в файле [LICENSE](LICENSE).
 ---
 ---
 
@@ -208,3 +211,7 @@ The root folder contains `config.yaml` with detailed English comments. In it, yo
 - **Voice Evolution (`ema_alpha`)**: Controls how fast the script adapts to a speaker's voice aging.
 - **Automatic Duplicate Merging**: Enabled by default (`auto_merge_duplicates: true`).
 - **Cache Limits (`max_size_mb` / `max_age_days`)**: Set the maximum megabyte limits and TTL (Time-To-Live) for the temporary audio cache folder to save disk space.
+
+## License
+
+This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for more information.
