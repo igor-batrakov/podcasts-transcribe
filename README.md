@@ -72,11 +72,30 @@ python transcribe.py --test 120
 4. In future podcast episodes, the program will automatically substitute "John Doe" and "Alice".
 5. *Recognition Errors?* If a new podcast introduces `GLOBAL_SPEAKER_5`, and it was actually John with a muffled microphone — just rename `GLOBAL_SPEAKER_5: John Doe`. The program will automatically merge their voices into a single database!
 
+## Supported Languages & Models
+
+By default, the script downloads and uses the `mlx-whisper-large-v3-ru-podlodka` model, which is fine-tuned specifically for podcasts. This model:
+*   **Perfectly recognizes Russian,** including heavy slang, swearing, anglicisms, and complex interruptions.
+*   **Excellently recognizes English.**
+
+**How to transcribe other languages (Spanish, German, Japanese, etc.)?**
+The underlying Whisper architecture supports **99 languages**. To enable auto-detection for any language:
+1. Open `config.yaml`.
+2. Delete the specific Russian model and replace it with the official multi-language community model:
+   ```yaml
+   path_or_hf_repo: mlx-community/whisper-large-v3-mlx
+   ```
+3. Change the hardcoded language setting to `null` (auto-detect):
+   ```yaml
+   language: null
+   ```
+
 ## Global Settings (config.yaml)
 
 The root folder contains `config.yaml` with detailed English comments. In it, you can tweak:
-- Whisper hallucination defenses.
-- Pyannote voice matching sensitivity (0.0 — 1.0).
-- Automatic duplicate merging.
-- Maximum megabyte limits and TTL for the audio cache folder.
-
+- **Transcription (`language` & `path_or_hf_repo`)**: Switch models and languages (default is strictly `ru` for speed).
+- **Hallucination Defenses**: Adjust `condition_on_previous_text` or `compression_ratio_threshold` to stop Whisper from looping on weird audio parts.
+- **Pyannote Voice Matching**: Change `similarity_threshold` (0.0 — 1.0) to make the script more strict or lenient when identifying returning guests.
+- **Voice Evolution (`ema_alpha`)**: Controls how fast the script adapts to a speaker's voice aging.
+- **Automatic Duplicate Merging**: Enabled by default (`auto_merge_duplicates: true`).
+- **Cache Limits (`max_size_mb` / `max_age_days`)**: Set the maximum megabyte limits and TTL (Time-To-Live) for the temporary audio cache folder to save disk space.
