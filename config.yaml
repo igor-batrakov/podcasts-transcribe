@@ -1,0 +1,62 @@
+# Core MLX Whisper model settings.
+# Default values are optimized for complex cross-talking in podcasts.
+
+# Which model to use. 'large-v3-ru-podlodka' is the best fine-tuned Russian model.
+path_or_hf_repo: models/mlx-whisper-large-v3-ru-podlodka
+
+# Language ('ru', 'en', or null for auto-detect).
+language: ru
+
+# Word-level timestamps. Critical for diarization (True/False). True significantly improves speaker interruption handling.
+word_timestamps: true
+
+# Whether to condition on previous text (True/False). False reduces hallucination and looping on hard audio.
+condition_on_previous_text: false
+
+# Filter for repeating words (zlib compression). Lower = more aggressive deduplication of "yeah yeah yeah". Default: 2.4.
+compression_ratio_threshold: 2.4
+
+# Creativity temperature for loop-breaking. [0.0] - strict, [1.0] - creative. Array lets model escape infinite loops.
+temperature:
+  - 0.0
+  - 0.2
+  - 0.4
+  - 0.6
+  - 0.8
+  - 1.0
+
+# Silence/noise cutoff threshold (0.0 - 1.0). HIGHER = keeps more quiet/bad speech. If words are dropping, set to 0.9. Default: 0.6.
+no_speech_threshold: 0.9
+
+# Confidence threshold (-20.0 to 0.0). LOWER (e.g., -1.5) means the model is more forgiving of doubts and keeps weird sections. Default: -1.0.
+logprob_threshold: -1.2
+
+# -----------------
+# DIARIZATION SETTINGS (Speaker Separation)
+# -----------------
+diarization:
+  # Which model to use for speaker recognition
+  model: pyannote/speaker-diarization-3.1
+  
+  # Voice vector similarity threshold (0.0 to 1.0). 
+  # If cosine distance between new podcast voice and saved DB voice is < 0.35, it's considered the same person.
+  similarity_threshold: 0.35
+  
+  # Voice evolution factor (EMA alpha) (0.0 - 1.0).
+  # 0.1 means 10% of the NEW podcast audio embedding is mixed with 90% of the historically saved embedding.
+  # This helps the script adapt to mic changes, aging voices, or host colds over time.
+  ema_alpha: 0.1
+
+  # Automatic duplicate merging.
+  # If you manually rename GLOBAL_SPEAKER_1 and GLOBAL_SPEAKER_5 to the exact same human name ("John"),
+  # the script will average their voice embeddings on the next run and delete the duplicate (#5).
+  auto_merge_duplicates: true
+
+# -----------------
+# CACHING SETTINGS
+# -----------------
+cache:
+  # Maximum size of the temporary WAV audio folder (in Megabytes).
+  max_size_mb: 1000
+  # File Time-to-Live (in Days). Files older than this threshold without being accessed will be deleted from cache.
+  max_age_days: 1

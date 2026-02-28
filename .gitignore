@@ -1,0 +1,23 @@
+# Environments
+.env
+.venv/
+venv/
+env/
+
+# IDE & OS
+.DS_Store
+.vscode/
+.idea/
+
+# Project Folders
+.cache/
+models/
+input/
+output/
+speakers/
+backlog.md
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class

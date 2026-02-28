@@ -1,0 +1,8 @@
+mlx-whisper
+pyannote.audio>=3.1.0
+torch
+torchaudio
+PyYAML
+python-dotenv
+numpy
+scipy
