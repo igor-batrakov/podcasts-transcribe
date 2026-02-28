@@ -15,7 +15,7 @@ def get_series_name(filename):
     
     if not name:
         return "unknown_series"
-    return name
+    return name.strip()
 
 def get_unique_filename(base_path):
     """Returns a unique filename by adding an increment if the file already exists."""
