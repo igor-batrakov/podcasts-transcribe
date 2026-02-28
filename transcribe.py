@@ -18,14 +18,19 @@ load_dotenv()
 console = Console()
 
 def process_podcasts(time_limit=None):
+    # Load master configuration
+    global_config = load_global_config()
+    paths_cfg = global_config.get("paths", {})
+    
+    input_dir = paths_cfg.get("input_dir", "input")
+    output_dir = paths_cfg.get("output_dir", "output")
+    
+    os.makedirs(input_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
+    
     # Find active audio extensions in the input folder
     supported_extensions = ("*.mp3", "*.m4a", "*.wav", "*.flac")
     audio_files = []
-    
-    input_dir = "input"
-    output_dir = "output"
-    os.makedirs(input_dir, exist_ok=True)
-    os.makedirs(output_dir, exist_ok=True)
     
     for ext in supported_extensions:
         audio_files.extend(glob.glob(os.path.join(input_dir, ext)))
@@ -36,8 +41,6 @@ def process_podcasts(time_limit=None):
 
     console.print(f"[bold green]Audio files found to process: {len(audio_files)}[/]")
     
-    # Load master configuration
-    global_config = load_global_config()
     whisper_kwargs = global_config["transcription"]
     diarization_cfg = global_config["diarization"]
     cache_cfg = global_config["cache"]
@@ -45,7 +48,6 @@ def process_podcasts(time_limit=None):
     similarity_threshold = diarization_cfg.get("similarity_threshold", 0.35)
     ema_alpha = diarization_cfg.get("ema_alpha", 0.1)
     auto_merge_duplicates = diarization_cfg.get("auto_merge_duplicates", True)
-    
     
     console.print("[dim]Settings loaded from config.yaml[/]")
 

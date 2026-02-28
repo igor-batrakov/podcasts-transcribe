@@ -7,7 +7,8 @@ def load_global_config():
     default_config = {
         "transcription": {"path_or_hf_repo": "mlx-whisper-large-v3-ru-podlodka", "word_timestamps": True},
         "diarization": {"similarity_threshold": 0.35, "ema_alpha": 0.1, "model": "pyannote/speaker-diarization-3.1"},
-        "cache": {"max_size_mb": 5000, "max_age_days": 7}
+        "cache": {"max_size_mb": 5000, "max_age_days": 7},
+        "paths": {"input_dir": "input", "output_dir": "output", "speakers_dir": "speakers", "cache_dir": ".cache/audio"}
     }
     
     if not os.path.exists(config_path):
@@ -24,14 +25,15 @@ def load_global_config():
         # Extract Whisper parameters (all root keys except specific sections)
         whisper_kwargs = {}
         for key, value in yaml_config.items():
-            if key not in ["diarization", "cache", "post_processing"]:
+            if key not in ["diarization", "cache", "post_processing", "paths"]:
                 whisper_kwargs[key] = value
                         
         return {
             "transcription": whisper_kwargs or default_config["transcription"],
             "diarization": yaml_config.get("diarization", default_config["diarization"]),
             "cache": yaml_config.get("cache", default_config["cache"]),
-            "post_processing": yaml_config.get("post_processing", {})
+            "post_processing": yaml_config.get("post_processing", {}),
+            "paths": yaml_config.get("paths", default_config["paths"])
         }
     except Exception as e:
         print(f"[ERROR] Failed to load {config_path}: {e}")

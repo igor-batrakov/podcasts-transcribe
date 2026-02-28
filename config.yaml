@@ -86,3 +86,16 @@ post_processing:
     
     Here is the transcript:
     {text}
+
+# -----------------
+# SYSTEM PATHS (Directories)
+# -----------------
+paths:
+  # Folder where you put raw audio files (mp3, wav, m4a, etc)
+  input_dir: input
+  # Folder where finished transcripts are saved
+  output_dir: output
+  # Folder where speaker voice fingerprints are saved across episodes
+  speakers_dir: speakers
+  # Temporary folder for converting audio files. Will be auto-cleaned up.
+  cache_dir: .cache/audio

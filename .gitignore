@@ -12,9 +12,12 @@ env/
 # Project Folders
 .cache/
 models/
-input/
-output/
-speakers/
+input/*
+!input/.gitkeep
+output/*
+!output/.gitkeep
+speakers/*
+!speakers/.gitkeep
 backlog.md
 
 # Python cache
