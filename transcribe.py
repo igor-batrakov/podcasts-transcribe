@@ -141,24 +141,49 @@ def process_podcasts(time_limit=None):
 
             with console.status("[bold magenta]Step 3/3: Merging text and identifying globals...", spinner="point"):
                 with open(output_txt, "w", encoding="utf-8") as f:
+                    current_speaker = None
+                    current_start_time = None
+                    current_text = []
+                    
                     for segment in result["segments"]:
                         start_time = segment["start"]
                         end_time = segment["end"]
                         text = segment["text"].strip()
                         
-                        # Format time as HH:MM:SS.mmm for readable outputs
-                        start_h, start_rem = divmod(start_time, 3600)
-                        start_m, start_s = divmod(start_rem, 60)
-                        start_fmt = f"{int(start_h):02d}:{int(start_m):02d}:{start_s:06.3f}"
-                        
-                        end_h, end_rem = divmod(end_time, 3600)
-                        end_m, end_s = divmod(end_rem, 60)
-                        end_fmt = f"{int(end_h):02d}:{int(end_m):02d}:{end_s:06.3f}"
-                        
                         # Interruption aware speaker resolving
                         speaker = get_speaker(diarization, start_time, end_time, speaker_mapping)
                         
-                        line = f"[{start_fmt} -> {end_fmt}] {speaker}: {text}\n"
+                        if current_speaker is None:
+                            # Initialization
+                            current_speaker = speaker
+                            current_start_time = start_time
+                            current_text = [text]
+                        elif speaker == current_speaker:
+                            # Speaker has not changed, accumulate text
+                            current_text.append(text)
+                        else:
+                            # Speaker changed, write the accumulated buffer to file
+                            start_h, start_rem = divmod(current_start_time, 3600)
+                            start_m, start_s = divmod(start_rem, 60)
+                            start_fmt = f"{int(start_h):02d}.{int(start_m):02d}.{int(start_s):02d}"
+                            
+                            merged_text = " ".join(current_text)
+                            line = f"[{start_fmt}] {current_speaker}: {merged_text}\n"
+                            f.write(line)
+                            
+                            # Start a new buffer for the new speaker
+                            current_speaker = speaker
+                            current_start_time = start_time
+                            current_text = [text]
+                            
+                    # Write the final remaining buffer after the loop finishes
+                    if current_speaker is not None:
+                        start_h, start_rem = divmod(current_start_time, 3600)
+                        start_m, start_s = divmod(start_rem, 60)
+                        start_fmt = f"{int(start_h):02d}.{int(start_m):02d}.{int(start_s):02d}"
+                        
+                        merged_text = " ".join(current_text)
+                        line = f"[{start_fmt}] {current_speaker}: {merged_text}\n"
                         f.write(line)
             
             console.print(f"   ✅ [bold green]Raw transcription saved:[/] {output_txt}")
