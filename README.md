@@ -13,6 +13,10 @@
     *   **Запоминание:** Цифровые слепки голосов (embeddings) записываются в локальную базу данных. Программа сама узнает ведущих в новых выпусках.
     *   **Эволюция голоса (EMA):** Скрипт подмешивает 10% нового голоса в эталонную базу при каждом совпадении. Это спасает качество при смене микрофона или взрослении диктора.
     *   **Авто-слияние:** Если нейросеть ошиблась и создала дубликат профиля, просто задайте ему такое же человеческое имя в локальном конфиге подкаста. При следующем запуске скрипт автоматически усреднит их голоса и удалит дубликат!
+*   **🏎️ Экстремальная оптимизация (Performance):**
+    *   **Предварительный опрос (Interactive CLI):** Скрипт анализирует все медиафайлы в папке и _до начала тяжелой обработки_ спрашивает у вас какую модель Диаризации использовать для новой серии (Skip, Fast, Accurate). После этого он уходит в полностью автономный режим.
+    *   **Voice Activity Detection (VAD):** Можно включить `vad_enabled` в `config.yaml`, чтобы скрипт прогнал аудио через легкую нейросеть-детектор речи и полностью вырезал тишину до того, как скормить аудио тяжелому алгоритму Диаризации. Это экономит колоссальное количество GPU.
+    *   **Аппаратное ускорение (Batching):** Поддерживается обработка аудио батчами (пакетами). Вы можете настроить `batch_size` и `num_workers` в `config.yaml` для максимальной загрузки многоядерных процессоров и видеокарт.
 *   **💾 Кеширование аудио:** Встроенный LRU-кэш для сконвертированных `wav` файлов спасает от повторных прогонов `ffmpeg`.
 
 ## Структура проекта
@@ -123,6 +127,10 @@ A script for automatic podcast transcription with speaker diarization. Integrate
     *   **Memorization:** Digital voice embeddings are saved in a local database. The program automatically recognizes hosts in new episodes.
     *   **Voice Evolution (EMA):** The script blends 10% of the new voice into the reference database upon each match. This maintains accuracy even if a speaker changes their microphone, voice ages, or has a cold.
     *   **Auto-Merge Duplicates:** If the neural network makes a mistake and creates a duplicate profile, simply assign it the same human name in the local podcast config. On the next run, the script will automatically average their voices and delete the duplicate!
+*   **🏎️ Extreme Optimization (Performance):**
+    *   **Upfront Setup (Interactive CLI):** The script scans all media upfront and asks which Diarization model to use for new series (Skip, Fast, Accurate) _before_ starting heavy processing. Then it runs 100% autonomously.
+    *   **Voice Activity Detection (VAD):** Enable `vad_enabled` in `config.yaml` to run audio through a lightweight speech-detector first, completely clipping out silence before the heavy Diarization model kicks in. Saves massive GPU time.
+    *   **Hardware Acceleration (Batching):** Process audio in parallel batches. Tune `batch_size` and `num_workers` in `config.yaml` to max out your multi-core CPU and GPU.
 *   **💾 Audio Caching:** Built-in LRU cache for converted `wav` files prevents redundant `ffmpeg` conversions on repeated runs.
 
 ## Project Structure
