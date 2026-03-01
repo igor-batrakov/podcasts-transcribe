@@ -110,36 +110,32 @@ def process_podcasts(time_limit=None):
             model_display = "Skip Diarization" if saved_model == "skip" else saved_model
             console.print(f"[dim]Historically selected model: {model_display}[/]")
             
+            console.print("  [1] Skip Diarization (1 Speaker only) - Fastest")
+            console.print("  [2] Fast Model (pyannote/speaker-diarization-2.1)")
+            console.print("  [3] Accurate Model - Overlapping speakers (pyannote/speaker-diarization-3.1)")
+            
             choice = input_with_timeout(
-                f"[yellow]Press [C] + Enter within 10 seconds to Change, or wait to continue: [/]", 
+                f"[yellow]Enter 1, 2, or 3 within 10s to Change (or wait to keep historical): [/]", 
                 timeout=10.0
             )
             
-            if choice and choice.upper() == 'C':
-                console.print("Select New Diarization Strategy:")
-                console.print("  [1] Skip Diarization (1 Speaker only) - Fastest")
-                console.print("  [2] Fast Model (pyannote/speaker-diarization-2.1)")
-                console.print("  [3] Accurate Model - Overlapping speakers (pyannote/speaker-diarization-3.1)")
-                
-                while True:
-                    new_choice = console.input("[bold]Enter 1, 2, or 3: [/]").strip()
-                    if new_choice == '1':
-                        series_models[series_name] = "skip"
-                        break
-                    elif new_choice == '2':
-                        series_models[series_name] = "pyannote/speaker-diarization-2.1"
-                        break
-                    elif new_choice == '3':
-                        series_models[series_name] = "pyannote/speaker-diarization-3.1"
-                        break
-                    console.print("[red]Invalid choice.[/]")
+            if choice and choice in ['1', '2', '3']:
+                if choice == '1':
+                    series_models[series_name] = "skip"
+                elif choice == '2':
+                    series_models[series_name] = "pyannote/speaker-diarization-2.1"
+                elif choice == '3':
+                    series_models[series_name] = "pyannote/speaker-diarization-3.1"
                     
                 config_db["diarization_model"] = series_models[series_name]
                 save_series_config(series_name, config_db)
                 console.print(f"[green]Updated selection in config for '{series_name}'.[/]")
             else:
                 series_models[series_name] = saved_model
-                console.print(f"[dim]Continuing with historical selection.[/]")
+                if choice:
+                    console.print("[red]Invalid choice.[/] [dim]Continuing with historical selection.[/]")
+                else:
+                    console.print(f"[dim]Continuing with historical selection.[/]")
 
     # Check if we need to load any pyannote models at all
     needs_diarization = any("pyannote" in model for model in series_models.values())
