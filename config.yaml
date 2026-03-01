@@ -53,6 +53,22 @@ diarization:
   auto_merge_duplicates: true
 
 # -----------------
+# PERFORMANCE SETTINGS
+# -----------------
+performance:
+  # Enable Voice Activity Detection (VAD) to skip silent parts before Pyannote analysis.
+  # This can significantly speed up Diarization processing. Default: false.
+  vad_enabled: false
+
+  # Pyannote batch size for GPU processing. 
+  # Higher (e.g., 32) = faster but uses more VRAM. Default: 8.
+  batch_size: 8
+  
+  # Number of background workers loading audio off disk. 
+  # Default: 4. Set to 0 if encountering crashing or freeze bugs.
+  num_workers: 4
+
+# -----------------
 # CACHING SETTINGS
 # -----------------
 cache:

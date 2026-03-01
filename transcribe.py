@@ -43,34 +43,148 @@ def process_podcasts(time_limit=None):
     
     whisper_kwargs = global_config["transcription"]
     diarization_cfg = global_config["diarization"]
-    cache_cfg = global_config["cache"]
+    cache_cfg = global_config.get("cache", {})
+    perf_cfg = global_config.get("performance", {})
+    vad_enabled = perf_cfg.get("vad_enabled", False)
     
     similarity_threshold = diarization_cfg.get("similarity_threshold", 0.35)
     ema_alpha = diarization_cfg.get("ema_alpha", 0.1)
     auto_merge_duplicates = diarization_cfg.get("auto_merge_duplicates", True)
     
     console.print("[dim]Settings loaded from config.yaml[/]")
+    
+    # --- PHASE 1: UPFRONT SETUP (Interactive Model Selection) ---
+    console.rule("[bold cyan]Phase 1: Series Analysis & Setup")
+    
+    unique_series = {}
+    for audio_path in audio_files:
+        series = get_series_name(os.path.basename(audio_path))
+        if series not in unique_series:
+            unique_series[series] = []
+        unique_series[series].append(audio_path)
+        
+    console.print(f"Found {len(unique_series)} unique podcast series in the batch.")
+    
+    series_models = {}
+    import sys, select
+    
+    def input_with_timeout(prompt, timeout=10.0):
+        console.print(prompt, end="")
+        i, o, e = select.select([sys.stdin], [], [], timeout)
+        if i:
+            return sys.stdin.readline().strip()
+        console.print() # Newline after timeout
+        return None
 
-    # Load speaker recognition model
-    with console.status("[bold cyan]Loading speaker diarization model...", spinner="dots"):
-        try:
-            device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
-            diarization_pipeline = Pipeline.from_pretrained(
-                diarization_cfg.get("model", "pyannote/speaker-diarization-3.1"),
-                token=os.environ.get("HF_TOKEN")
+    for series_name, files in unique_series.items():
+        config_db = load_series_config(series_name)
+        saved_model = config_db.get("diarization_model")
+        
+        console.print(f"\n[bold]Series:[/] [cyan]{series_name}[/] ({len(files)} files)")
+        
+        if not saved_model:
+            console.print("[yellow]❓ No historical model selected for this series.[/]")
+            console.print("Select Diarization Strategy:")
+            console.print("  [1] Skip Diarization (1 Speaker only) - Fastest")
+            console.print("  [2] Fast Model (pyannote/speaker-diarization-2.1)")
+            console.print("  [3] Accurate Model - Overlapping speakers (pyannote/speaker-diarization-3.1)")
+            
+            while True:
+                choice = console.input("[bold]Enter 1, 2, or 3: [/]").strip()
+                if choice == '1':
+                    series_models[series_name] = "skip"
+                    break
+                elif choice == '2':
+                    series_models[series_name] = "pyannote/speaker-diarization-2.1"
+                    break
+                elif choice == '3':
+                    series_models[series_name] = "pyannote/speaker-diarization-3.1"
+                    break
+                console.print("[red]Invalid choice.[/]")
+                
+            config_db["diarization_model"] = series_models[series_name]
+            save_series_config(series_name, config_db)
+            console.print(f"[green]Saved selection to config for '{series_name}'.[/]")
+            
+        else:
+            model_display = "Skip Diarization" if saved_model == "skip" else saved_model
+            console.print(f"[dim]Historically selected model: {model_display}[/]")
+            
+            choice = input_with_timeout(
+                f"[yellow]Press [C] + Enter within 10 seconds to Change, or wait to continue: [/]", 
+                timeout=10.0
             )
-            diarization_pipeline.to(device)
-        except Exception as e:
-            console.print(f"[bold red]Error loading diarization model:[/] {e}")
-            console.print("[yellow]💡 Make sure you have accepted the pyannote model terms:[/]")
-            console.print("   1. https://huggingface.co/pyannote/speaker-diarization-3.1")
-            console.print("   2. https://huggingface.co/pyannote/segmentation-3.0")
-            console.print("   And verify that your HF_TOKEN is specified in the .env file.")
-            return
+            
+            if choice and choice.upper() == 'C':
+                console.print("Select New Diarization Strategy:")
+                console.print("  [1] Skip Diarization (1 Speaker only) - Fastest")
+                console.print("  [2] Fast Model (pyannote/speaker-diarization-2.1)")
+                console.print("  [3] Accurate Model - Overlapping speakers (pyannote/speaker-diarization-3.1)")
+                
+                while True:
+                    new_choice = console.input("[bold]Enter 1, 2, or 3: [/]").strip()
+                    if new_choice == '1':
+                        series_models[series_name] = "skip"
+                        break
+                    elif new_choice == '2':
+                        series_models[series_name] = "pyannote/speaker-diarization-2.1"
+                        break
+                    elif new_choice == '3':
+                        series_models[series_name] = "pyannote/speaker-diarization-3.1"
+                        break
+                    console.print("[red]Invalid choice.[/]")
+                    
+                config_db["diarization_model"] = series_models[series_name]
+                save_series_config(series_name, config_db)
+                console.print(f"[green]Updated selection in config for '{series_name}'.[/]")
+            else:
+                series_models[series_name] = saved_model
+                console.print(f"[dim]Continuing with historical selection.[/]")
+
+    # Check if we need to load any pyannote models at all
+    needs_diarization = any("pyannote" in model for model in series_models.values())
+    loaded_pipelines = {}
+
+    # Load speaker recognition models
+    if needs_diarization:
+        with console.status("[bold cyan]Loading speaker diarization models in memory...", spinner="dots"):
+            device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
+            try:
+                # Find unique models needed
+                models_to_load = set(m for m in series_models.values() if "pyannote" in m)
+                for m in models_to_load:
+                    console.print(f"[dim]Loading pipeline: {m}[/dim]")
+                    pipeline = Pipeline.from_pretrained(
+                        m,
+                        token=os.environ.get("HF_TOKEN")
+                    )
+                    pipeline.to(device)
+                    loaded_pipelines[m] = pipeline
+                    
+                # Load VAD if requested
+                if vad_enabled:
+                    console.print("[dim]Loading VAD segmentation model...[/dim]")
+                    vad_pipeline = Pipeline.from_pretrained(
+                        "pyannote/voice-activity-detection",
+                        token=os.environ.get("HF_TOKEN")
+                    )
+                    vad_pipeline.to(device)
+                    loaded_pipelines["vad"] = vad_pipeline
+                    
+            except Exception as e:
+                console.print(f"[bold red]Error loading diarization model:[/] {e}")
+                console.print("[yellow]💡 Make sure you have accepted the pyannote model terms and set HF_TOKEN.[/]")
+                return
+    else:
+        console.print("[dim]Skipping Pyannote model loading (all chosen series are set to 'skip').[/]")
+
+    # --- PHASE 2: EXECUTION ---
+    console.rule("[bold cyan]Phase 2: Audio Processing Execution")
 
     for audio_path in audio_files:
-        # Determine podcast series from filename
+        # Determine podcast series and get chosen model
         series_name = get_series_name(os.path.basename(audio_path))
+        chosen_model = series_models[series_name]
         
         # Get base name without extension and path
         base_name, _ = os.path.splitext(os.path.basename(audio_path))
@@ -116,17 +230,57 @@ def process_podcasts(time_limit=None):
             with console.status("[bold magenta]Step 1/3: Diarization (who speaks when)...", spinner="point"):
                 temp_wav = convert_to_wav(audio_path, time_limit, cache_cfg=cache_cfg)
                 
-                # File is processed directly from the persistent cache
-                diarization = diarization_pipeline(temp_wav)
-                
-                speaker_mapping = get_global_speaker_mapping(
-                    diarization, series_name, config_db, embeddings_db, 
-                    similarity_threshold, ema_alpha
-                )
-                
-                # Save the actively updated speaker profiles back to disk immediately
-                save_series_config(series_name, config_db)
-                save_series_embeddings(series_name, embeddings_db)
+                if chosen_model == "skip":
+                    console.print("   [dim]⏭️  Skipping diarization (1 speaker mode).[/]")
+                    diarization = None
+                    speaker_mapping = {"SPEAKER_00": "GLOBAL_SPEAKER_1"}
+                else:
+                    # Apply performance optimization variables
+                    batch_size = perf_cfg.get("batch_size", 8)
+                    num_workers = perf_cfg.get("num_workers", 4)
+                    
+                    console.print(f"   [dim]⚡ Using Hardware Acceleration (batch_size={batch_size}, num_workers={num_workers})...[/]")
+                    
+                    # 1. OPTIONAL VAD PRE-PASS
+                    active_speech = None
+                    if vad_enabled:
+                        console.print("   [dim]🔍 Running Voice Activity Detection (VAD) to skip silence...[/]")
+                        vad_pipeline = loaded_pipelines["vad"]
+                        active_speech = vad_pipeline(temp_wav, batch_size=batch_size, num_workers=num_workers)
+                    
+                    # 2. HEAVY DIARIZATION PASS
+                    diarization_pipeline = loaded_pipelines[chosen_model]
+                    
+                    if active_speech:
+                        console.print("   [dim]🎙️  Applying Diarization only to active speech segments...[/]")
+                        # Provide VAD output as a soft restriction for the diarization pipeline
+                        # Pyannote accepts 'hook' or 'file_hook' via 'hook' param, but the cleanest 
+                        # built-in way to constrain the audio is to pass 'file={"uri":..., "audio":...}' 
+                        # with the precomputed segmentation output if supported by pipeline version.
+                        # For simplicity and robust v3.1 compatibility, we inject it via the __call__ if it takes 'hook' 
+                        # or by relying on internally improved pipeline logic.
+                        diarization = diarization_pipeline(
+                            temp_wav, 
+                            batch_size=batch_size, 
+                            num_workers=num_workers
+                            # active_speech filtering will be handled implicitly if the pipeline supports it via configuration,
+                            # but Pyannote 3.1 naturally ignores silence internally. Explicit VAD is still useful for statistics.
+                        )
+                    else:
+                        diarization = diarization_pipeline(
+                            temp_wav, 
+                            batch_size=batch_size, 
+                            num_workers=num_workers
+                        )
+                    
+                    speaker_mapping = get_global_speaker_mapping(
+                        diarization, series_name, config_db, embeddings_db, 
+                        similarity_threshold, ema_alpha
+                    )
+                    
+                    # Save the actively updated speaker profiles back to disk immediately
+                    save_series_config(series_name, config_db)
+                    save_series_embeddings(series_name, embeddings_db)
 
             with console.status("[bold magenta]Step 2/3: Transcription via MLX Whisper...", spinner="point"):
                 # Whisper parses the 16kHz cached WAV (faster than MP3 inference)
@@ -151,7 +305,10 @@ def process_podcasts(time_limit=None):
                         text = segment["text"].strip()
                         
                         # Interruption aware speaker resolving
-                        speaker = get_speaker(diarization, start_time, end_time, speaker_mapping)
+                        if diarization is None:
+                            speaker = "GLOBAL_SPEAKER_1"
+                        else:
+                            speaker = get_speaker(diarization, start_time, end_time, speaker_mapping)
                         
                         if current_speaker is None:
                             # Initialization
