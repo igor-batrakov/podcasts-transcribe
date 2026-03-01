@@ -150,14 +150,37 @@ def process_podcasts(time_limit=None):
                 models_to_load = set(m for m in series_models.values() if "pyannote" in m)
                 for m in models_to_load:
                     console.print(f"[dim]Loading pipeline: {m}[/dim]")
-                    # Pyannote requires version tags to be downloaded via the revision keyword argument
-                    model_id = "pyannote/speaker-diarization" if m == "pyannote/speaker-diarization-2.1" else m
-                    req_revision = "2.1" if m == "pyannote/speaker-diarization-2.1" else None
-                    pipeline = Pipeline.from_pretrained(
-                        model_id,
-                        use_auth_token=os.environ.get("HF_TOKEN"),
-                        revision=req_revision
-                    )
+                    if m == "pyannote/speaker-diarization-2.1":
+                        # Pyannote 4.0.4 breaks backwards compatibility with 2.1 config @ syntax
+                        # We must fetch the config and patch the segmentation parameter
+                        from huggingface_hub import hf_hub_download
+                        import yaml
+                        config_path = hf_hub_download(
+                            repo_id="pyannote/speaker-diarization",
+                            filename="config.yaml",
+                            revision="2.1",
+                            token=os.environ.get("HF_TOKEN")
+                        )
+                        with open(config_path, "r", encoding="utf-8") as f:
+                            config_dict = yaml.safe_load(f)
+                        # Replace '@' syntax with a dictionary pointing to the checkpoint and revision
+                        config_dict["pipeline"]["params"]["segmentation"] = {
+                            "checkpoint": "pyannote/segmentation",
+                            "revision": "2022.07"
+                        }
+                        # Replace deprecated speechbrain embeddings with modern Pyannote 3.1 embeddings
+                        if config_dict["pipeline"]["params"].get("embedding") == "speechbrain/spkrec-ecapa-voxceleb":
+                            config_dict["pipeline"]["params"]["embedding"] = "pyannote/wespeaker-voxceleb-resnet34-LM"
+                            
+                        pipeline = Pipeline.from_pretrained(
+                            config_dict,
+                            token=os.environ.get("HF_TOKEN")
+                        )
+                    else:
+                        pipeline = Pipeline.from_pretrained(
+                            m,
+                            token=os.environ.get("HF_TOKEN")
+                        )
                     pipeline.to(device)
                     loaded_pipelines[m] = pipeline
                     
