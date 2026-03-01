@@ -45,6 +45,8 @@ podcasts_transcribe/
     * Модели Pyannote Audio являются открытыми, но требуют согласия с правилами на HuggingFace.
     * Перейдите на [speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) и нажмите "Agree".
     * Перейдите на [segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0) и нажмите "Agree".
+    * Если планируете использовать Fast Model, перейдите на [speaker-diarization-2.1](https://huggingface.co/pyannote/speaker-diarization-2.1) и [segmentation](https://huggingface.co/pyannote/segmentation) и тоже нажмите "Agree".
+    * (Опционально) Для VAD: перейдите на [voice-activity-detection](https://huggingface.co/pyannote/voice-activity-detection) и нажмите "Agree".
     * Создайте HF Token в настройках аккаунта HuggingFace.
 4. Создайте файл `.env` в корне проекта и впишите туда токен:
     ```env
@@ -160,6 +162,8 @@ podcasts_transcribe/
     * Pyannote Audio models are open-source but require accepting terms on HuggingFace.
     * Visit [speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) and click "Agree".
     * Visit [segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0) and click "Agree".
+    * If using the Fast Model, visit [speaker-diarization-2.1](https://huggingface.co/pyannote/speaker-diarization-2.1) and [segmentation](https://huggingface.co/pyannote/segmentation) to agree.
+    * (Optional) For VAD: visit [voice-activity-detection](https://huggingface.co/pyannote/voice-activity-detection) and click "Agree".
     * Create a User Access Token in your HuggingFace account settings.
 4. Create a `.env` file in the project root and add the token:
     ```env
