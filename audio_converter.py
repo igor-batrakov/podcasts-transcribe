@@ -24,13 +24,14 @@ def cleanup_cache(cache_dir, max_size_mb, max_age_days):
                     continue
                     
     # 2. Limit total directory size
-    files = []
-    total_size = 0
+    files: list[tuple[str, float, int]] = []
+    total_size: int = 0
     for filename in os.listdir(cache_dir):
         filepath = os.path.join(cache_dir, filename)
         if os.path.isfile(filepath):
             size = int(os.path.getsize(filepath))
             files.append((filepath, os.stat(filepath).st_atime, size))
+            # pyre-ignore[58]
             total_size += size
             
     max_size_bytes = max_size_mb * 1024 * 1024
@@ -41,6 +42,7 @@ def cleanup_cache(cache_dir, max_size_mb, max_age_days):
         for filepath, _, size in files:
             try:
                 os.remove(filepath)
+                # pyre-ignore[58]
                 total_size -= size
                 if total_size <= max_size_bytes:
                     break

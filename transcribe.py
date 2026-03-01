@@ -287,8 +287,8 @@ def process_podcasts(time_limit=None):
 
             with console.status("[bold magenta]Step 3/3: Merging text and identifying globals...", spinner="point"):
                 with open(output_txt, "w", encoding="utf-8") as f:
-                    current_speaker = None
-                    current_start_time = None
+                    current_speaker = ""
+                    current_start_time = 0.0
                     current_text = []
                     
                     for segment in result["segments"]:
@@ -302,7 +302,7 @@ def process_podcasts(time_limit=None):
                         else:
                             speaker = get_speaker(diarization, start_time, end_time, speaker_mapping)
                         
-                        if current_speaker is None:
+                        if not current_speaker:
                             # Initialization
                             current_speaker = speaker
                             current_start_time = start_time
@@ -326,7 +326,7 @@ def process_podcasts(time_limit=None):
                             current_text = [text]
                             
                     # Write the final remaining buffer after the loop finishes
-                    if current_speaker is not None:
+                    if current_speaker:
                         start_h, start_rem = divmod(current_start_time, 3600)
                         start_m, start_s = divmod(start_rem, 60)
                         start_fmt = f"{int(start_h):02d}.{int(start_m):02d}.{int(start_s):02d}"

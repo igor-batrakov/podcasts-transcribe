@@ -85,7 +85,8 @@ def merge_duplicate_speakers(series_name, config_db, embeddings_db):
                 embeddings_db[main_id] = merged_emb
                 
                 # Delete the other "duplicate" IDs from config and embeddings DB
-                for duplicate_id in ids[1:]:
+                for idx in range(1, len(ids)):
+                    duplicate_id = ids[idx]
                     if duplicate_id in embeddings_db:
                         del embeddings_db[duplicate_id]
                     if duplicate_id in config_db:
@@ -156,7 +157,7 @@ def get_global_speaker_mapping(diarization, series_name, config_db, embeddings_d
 
 def get_speaker(diarization, start, end, speaker_mapping=None):
     """Finds the speaker who talks the most during a specific timeframe"""
-    speaker_durations = {}
+    speaker_durations: dict[str, float] = {}
     
     annotation = getattr(diarization, "speaker_diarization", diarization)
     if annotation is None:
@@ -165,10 +166,10 @@ def get_speaker(diarization, start, end, speaker_mapping=None):
     for turn, _, local_speaker in annotation.itertracks(yield_label=True):
         overlap_start = max(start, turn.start)
         overlap_end = min(end, turn.end)
-        overlap = max(0, overlap_end - overlap_start)
+        overlap = float(max(0, overlap_end - overlap_start))
         
         if overlap > 0:
-            speaker_durations[local_speaker] = speaker_durations.get(local_speaker, 0) + overlap
+            speaker_durations[local_speaker] = speaker_durations.get(local_speaker, 0.0) + overlap
             
     if not speaker_durations:
         return "UNKNOWN"
