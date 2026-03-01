@@ -150,9 +150,13 @@ def process_podcasts(time_limit=None):
                 models_to_load = set(m for m in series_models.values() if "pyannote" in m)
                 for m in models_to_load:
                     console.print(f"[dim]Loading pipeline: {m}[/dim]")
+                    # Pyannote requires version tags to be downloaded via the revision keyword argument
+                    model_id = "pyannote/speaker-diarization" if m == "pyannote/speaker-diarization-2.1" else m
+                    req_revision = "2.1" if m == "pyannote/speaker-diarization-2.1" else None
                     pipeline = Pipeline.from_pretrained(
-                        m,
-                        token=os.environ.get("HF_TOKEN")
+                        model_id,
+                        use_auth_token=os.environ.get("HF_TOKEN"),
+                        revision=req_revision
                     )
                     pipeline.to(device)
                     loaded_pipelines[m] = pipeline
