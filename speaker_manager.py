@@ -85,7 +85,7 @@ def merge_duplicate_speakers(series_name, config_db, embeddings_db):
                 embeddings_db[main_id] = merged_emb
                 
                 # Delete the other "duplicate" IDs from config and embeddings DB
-                for duplicate_id in list(ids)[1:]:
+                for duplicate_id in ids[1:]:
                     if duplicate_id in embeddings_db:
                         del embeddings_db[duplicate_id]
                     if duplicate_id in config_db:

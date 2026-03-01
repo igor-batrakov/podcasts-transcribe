@@ -246,7 +246,7 @@ def process_podcasts(time_limit=None):
                     if vad_enabled:
                         console.print("   [dim]🔍 Running Voice Activity Detection (VAD) to skip silence...[/]")
                         vad_pipeline = loaded_pipelines["vad"]
-                        active_speech = vad_pipeline(temp_wav, batch_size=batch_size, num_workers=num_workers)
+                        active_speech = vad_pipeline(temp_wav)
                     
                     # 2. HEAVY DIARIZATION PASS
                     diarization_pipeline = loaded_pipelines[chosen_model]
@@ -260,17 +260,13 @@ def process_podcasts(time_limit=None):
                         # For simplicity and robust v3.1 compatibility, we inject it via the __call__ if it takes 'hook' 
                         # or by relying on internally improved pipeline logic.
                         diarization = diarization_pipeline(
-                            temp_wav, 
-                            batch_size=batch_size, 
-                            num_workers=num_workers
+                            temp_wav
                             # active_speech filtering will be handled implicitly if the pipeline supports it via configuration,
                             # but Pyannote 3.1 naturally ignores silence internally. Explicit VAD is still useful for statistics.
                         )
                     else:
                         diarization = diarization_pipeline(
-                            temp_wav, 
-                            batch_size=batch_size, 
-                            num_workers=num_workers
+                            temp_wav
                         )
                     
                     speaker_mapping = get_global_speaker_mapping(

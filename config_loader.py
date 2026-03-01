@@ -25,7 +25,7 @@ def load_global_config():
         # Extract Whisper parameters (all root keys except specific sections)
         whisper_kwargs = {}
         for key, value in yaml_config.items():
-            if key not in ["diarization", "cache", "post_processing", "paths"]:
+            if key not in ["diarization", "cache", "post_processing", "paths", "performance"]:
                 whisper_kwargs[key] = value
                         
         return {
