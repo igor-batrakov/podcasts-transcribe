@@ -171,7 +171,24 @@ def process_podcasts(time_limit=None):
                         f.write(formatted_text)
                         
                 console.print(f"   ✨ [bold green]LLM formatted transcript saved:[/] {final_output_path}")
-            
+                
+            # Ask to delete the original audio
+            console.print(f"\n[bold yellow]❓ Finished processing '{os.path.basename(audio_path)}'[/]")
+            while True:
+                del_choice = console.input("[bold]Delete original media file? [Y]es, [N]o: [/]").strip().upper()
+                if del_choice == 'Y':
+                    try:
+                        os.remove(audio_path)
+                        console.print(f"   🗑️ [dim]Deleted {audio_path}[/]")
+                    except Exception as e:
+                        console.print(f"   ❌ [red]Could not delete {audio_path}: {e}[/]")
+                    break
+                elif del_choice == 'N':
+                    console.print("   💾 [dim]Kept original file.[/]")
+                    break
+                else:
+                    console.print("[red]Invalid choice. Please enter Y or N.[/]")
+                    
         except Exception as e:
             console.print(f"   ❌ [bold red]Failed to process file {audio_path}:[/] {e}")
 
