@@ -146,9 +146,14 @@ def process_podcasts(time_limit=None):
                         end_time = segment["end"]
                         text = segment["text"].strip()
                         
-                        # Format time as MM:SS.mmm for readable outputs
-                        start_fmt = f"{int(start_time // 60):02d}:{start_time % 60:06.3f}"
-                        end_fmt = f"{int(end_time // 60):02d}:{end_time % 60:06.3f}"
+                        # Format time as HH:MM:SS.mmm for readable outputs
+                        start_h, start_rem = divmod(start_time, 3600)
+                        start_m, start_s = divmod(start_rem, 60)
+                        start_fmt = f"{int(start_h):02d}:{int(start_m):02d}:{start_s:06.3f}"
+                        
+                        end_h, end_rem = divmod(end_time, 3600)
+                        end_m, end_s = divmod(end_rem, 60)
+                        end_fmt = f"{int(end_h):02d}:{int(end_m):02d}:{end_s:06.3f}"
                         
                         # Interruption aware speaker resolving
                         speaker = get_speaker(diarization, start_time, end_time, speaker_mapping)
