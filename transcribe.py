@@ -1,8 +1,21 @@
 import os
+
+# Suppress TQDM output from underneath pyannote and whisper
+os.environ["TQDM_DISABLE"] = "1"
+
 import glob
 import torch
 import mlx_whisper
+
+import warnings
+import logging
+
+# Suppress torchvision and lightning noise from pyannote
+warnings.filterwarnings("ignore", module="torchvision")
+logging.getLogger("pytorch_lightning").setLevel(logging.ERROR)
+
 from pyannote.audio import Pipeline
+
 from dotenv import load_dotenv
 
 # Initialize local modules
@@ -13,9 +26,18 @@ from speaker_manager import load_series_config, load_series_embeddings, save_ser
 from post_processing import run_post_processing
 from rich.console import Console
 from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeRemainingColumn, TaskProgressColumn
+from rich.text import Text
 
 load_dotenv()
 console = Console()
+
+class CustomTaskProgressColumn(TaskProgressColumn):
+    """A custom column that hides the percentage when total is None (indeterminate)."""
+    def render(self, task):
+        if task.total is None:
+            return Text("")
+        return super().render(task)
 
 def process_podcasts(time_limit=None):
     # Load master configuration
@@ -89,18 +111,24 @@ def process_podcasts(time_limit=None):
             console.print("  [2] Fast Model (pyannote/speaker-diarization-2.1)")
             console.print("  [3] Accurate Model - Overlapping speakers (pyannote/speaker-diarization-3.1)")
             
-            while True:
-                choice = console.input("[bold]Enter 1, 2, or 3: [/]").strip()
+            choice = input_with_timeout(
+                f"[bold yellow]Enter 1, 2, or 3 within 10s (default is 3): [/]", 
+                timeout=10.0
+            )
+
+            if choice and choice in ['1', '2', '3']:
                 if choice == '1':
                     series_models[series_name] = "skip"
-                    break
                 elif choice == '2':
                     series_models[series_name] = "pyannote/speaker-diarization-2.1"
-                    break
                 elif choice == '3':
                     series_models[series_name] = "pyannote/speaker-diarization-3.1"
-                    break
-                console.print("[red]Invalid choice.[/]")
+            else:
+                if choice:
+                    console.print("[red]Invalid choice.[/] [dim]Defaulting to Accurate Model (3).[/]")
+                else:
+                    console.print("[dim]Defaulting to Accurate Model (3).[/]")
+                series_models[series_name] = "pyannote/speaker-diarization-3.1"
                 
             config_db["diarization_model"] = series_models[series_name]
             save_series_config(series_name, config_db)
@@ -201,20 +229,18 @@ def process_podcasts(time_limit=None):
     else:
         console.print("[dim]Skipping Pyannote model loading (all chosen series are set to 'skip').[/]")
 
-    # --- PHASE 2: EXECUTION ---
-    console.rule("[bold cyan]Phase 2: Audio Processing Execution")
-
+    # --- PHASE 2: PRE-FLIGHT CHECKS ---
+    console.rule("[bold cyan]Phase 2: Preparation & Pre-flight")
+    
+    files_to_process = []
+    
     for audio_path in audio_files:
-        # Determine podcast series and get chosen model
         series_name = get_series_name(os.path.basename(audio_path))
         chosen_model = series_models[series_name]
-        
-        # Get base name without extension and path
         base_name, _ = os.path.splitext(os.path.basename(audio_path))
         output_txt = os.path.join(output_dir, f"{base_name}.txt")
         
         if os.path.exists(output_txt):
-            # Interactive menu if file exists
             console.print(f"\n[bold yellow][WARNING] Output file '{output_txt}' already exists.[/]")
             while True:
                 choice = console.input("[bold]Action? [O]verwrite, [R]ename, [S]kip file, [Q]uit script: [/]").strip().upper()
@@ -235,22 +261,45 @@ def process_podcasts(time_limit=None):
                     console.print("[red]Invalid choice. Please enter O, R, S, or Q.[/]")
             if choice == 'S':
                 continue
-            
-        console.rule(f"[bold blue]Processing: {os.path.basename(audio_path)} (Series: {series_name})")
+                
+        files_to_process.append((audio_path, series_name, chosen_model, base_name, output_txt))
+
+    if not files_to_process:
+        console.print("[bold yellow]No files to process. Exiting.[/]")
+        return
+
+    # --- PHASE 3: EXECUTION ---
+    console.rule("[bold cyan]Phase 3: Audio Processing Execution")
+    successfully_processed = []
+
+    # Custom column configuration: 
+    # Batch bar gets numbers (but no fake time remaining), file task gets just the animation.
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        # Only show percentage if total is known (e.g. batch task)
+        CustomTaskProgressColumn(),
+        console=console,
+    ) as progress:
+        job_task = progress.add_task("[cyan]Batch Progress", total=len(files_to_process))
         
-        # Load saved speaker profiles for this specific series
-        config_db = load_series_config(series_name)
-        embeddings_db = load_series_embeddings(series_name)
+        for audio_path, series_name, chosen_model, base_name, output_txt in files_to_process:
+            progress.update(job_task, description=f"[cyan]Processing: {base_name}...")
         
-        # Automated duplicate speaker merging
-        if auto_merge_duplicates:
-            if merge_duplicate_speakers(series_name, config_db, embeddings_db):
-                save_series_config(series_name, config_db)
-                save_series_embeddings(series_name, embeddings_db)
+            # Load saved speaker profiles for this specific series
+            config_db = load_series_config(series_name)
+            embeddings_db = load_series_embeddings(series_name)
+        
+            # Automated duplicate speaker merging
+            if auto_merge_duplicates:
+                if merge_duplicate_speakers(series_name, config_db, embeddings_db):
+                    save_series_config(series_name, config_db)
+                    save_series_embeddings(series_name, embeddings_db)
                 
                 
-        try:
-            with console.status("[bold magenta]Step 1/3: Diarization (who speaks when)...", spinner="point"):
+            try:
+                file_task = progress.add_task(f"[magenta]{base_name}: Diarization", total=None)
                 temp_wav = convert_to_wav(audio_path, time_limit, cache_cfg=cache_cfg)
                 
                 if chosen_model == "skip":
@@ -261,19 +310,19 @@ def process_podcasts(time_limit=None):
                     # Apply performance optimization variables
                     batch_size = perf_cfg.get("batch_size", 8)
                     num_workers = perf_cfg.get("num_workers", 4)
-                    
+                
                     console.print(f"   [dim]⚡ Using Hardware Acceleration (batch_size={batch_size}, num_workers={num_workers})...[/]")
-                    
+                
                     # 1. OPTIONAL VAD PRE-PASS
                     active_speech = None
                     if vad_enabled:
                         console.print("   [dim]🔍 Running Voice Activity Detection (VAD) to skip silence...[/]")
                         vad_pipeline = loaded_pipelines["vad"]
                         active_speech = vad_pipeline(temp_wav)
-                    
+                
                     # 2. HEAVY DIARIZATION PASS
                     diarization_pipeline = loaded_pipelines[chosen_model]
-                    
+                
                     if active_speech:
                         console.print("   [dim]🎙️  Applying Diarization only to active speech segments...[/]")
                         # Provide VAD output as a soft restriction for the diarization pipeline
@@ -291,112 +340,143 @@ def process_podcasts(time_limit=None):
                         diarization = diarization_pipeline(
                             temp_wav
                         )
-                    
+                
                     speaker_mapping = get_global_speaker_mapping(
                         diarization, series_name, config_db, embeddings_db, 
                         similarity_threshold, ema_alpha
                     )
-                    
+                
                     # Save the actively updated speaker profiles back to disk immediately
                     save_series_config(series_name, config_db)
                     save_series_embeddings(series_name, embeddings_db)
 
-            with console.status("[bold magenta]Step 2/3: Transcription via MLX Whisper...", spinner="point"):
+                progress.update(file_task, description=f"[magenta]{base_name}: Transcription")
                 # Whisper parses the 16kHz cached WAV (faster than MP3 inference)
                 transcribe_source = temp_wav
                 
                 # Transcription via MLX on Apple Silicon GPU
-                result = mlx_whisper.transcribe(
-                    transcribe_source,
-                    verbose=False, # Hardcoded false to prevent CLI bloat
-                    **whisper_kwargs
-                )
+                # Redirect stderr to /dev/null to suppress MLX's internal TQDM output
+                import sys
+                _original_stderr = sys.stderr
+                sys.stderr = open(os.devnull, 'w')
+                try:
+                    result = mlx_whisper.transcribe(
+                        transcribe_source,
+                        verbose=False,
+                        **whisper_kwargs
+                    )
+                finally:
+                    sys.stderr.close()
+                    sys.stderr = _original_stderr
 
-            with console.status("[bold magenta]Step 3/3: Merging text and identifying globals...", spinner="point"):
+                progress.update(file_task, description=f"[magenta]{base_name}: Merging text")
                 with open(output_txt, "w", encoding="utf-8") as f:
-                    current_speaker = ""
-                    current_start_time = 0.0
-                    current_text = []
+                        current_speaker = ""
+                        current_start_time = 0.0
+                        current_text = []
                     
-                    for segment in result["segments"]:
-                        start_time = segment["start"]
-                        end_time = segment["end"]
-                        text = segment["text"].strip()
+                        for segment in result["segments"]:
+                            start_time = segment["start"]
+                            end_time = segment["end"]
+                            text = segment["text"].strip()
                         
-                        # Interruption aware speaker resolving
-                        if diarization is None:
-                            speaker = "GLOBAL_SPEAKER_1"
-                        else:
-                            speaker = get_speaker(diarization, start_time, end_time, speaker_mapping)
+                            # Fix Whisper Hallucinations
+                            if "DimaTorzok" in text or "Продолжение следует" in text or "Подпишитесь на канал" in text:
+                                continue
                         
-                        if not current_speaker:
-                            # Initialization
-                            current_speaker = speaker
-                            current_start_time = start_time
-                            current_text = [text]
-                        elif speaker == current_speaker:
-                            # Speaker has not changed, accumulate text
-                            current_text.append(text)
-                        else:
-                            # Speaker changed, write the accumulated buffer to file
+                            # Resolve speaker first (needed before UNKNOWN check)
+                            if diarization is None:
+                                speaker = "GLOBAL_SPEAKER_1"
+                            else:
+                                speaker = get_speaker(diarization, start_time, end_time, speaker_mapping)
+                        
+                            # Fix Pyannote UNKNOWN & Noise brackets
+                            skip_noise = global_config.get("processing", {}).get("skip_noise_and_music", False)
+                            if skip_noise:
+                                import re
+                                is_pure_noise = bool(re.match(r'^[\(\[].*?[\)\]]$', text))
+                                if is_pure_noise or speaker == "UNKNOWN" or speaker == "[UNKNOWN]":
+                                    continue
+                                
+                            # Interruption aware speaker resolving
+                            if diarization is None:
+                                speaker = "GLOBAL_SPEAKER_1"
+                            else:
+                                speaker = get_speaker(diarization, start_time, end_time, speaker_mapping)
+                        
+                            if not current_speaker:
+                                # Initialization
+                                current_speaker = speaker
+                                current_start_time = start_time
+                                current_text = [text]
+                            elif speaker == current_speaker:
+                                # Speaker has not changed, accumulate text
+                                current_text.append(text)
+                            else:
+                                # Speaker changed, write the accumulated buffer to file
+                                start_h, start_rem = divmod(current_start_time, 3600)
+                                start_m, start_s = divmod(start_rem, 60)
+                                start_fmt = f"{int(start_h):02d}.{int(start_m):02d}.{int(start_s):02d}"
+                            
+                                merged_text = " ".join(current_text)
+                                line = f"[{start_fmt}] {current_speaker}: {merged_text}\n"
+                                f.write(line)
+                            
+                                # Start a new buffer for the new speaker
+                                current_speaker = speaker
+                                current_start_time = start_time
+                                current_text = [text]
+                            
+                        # Write the final remaining buffer after the loop finishes
+                        if current_speaker:
                             start_h, start_rem = divmod(current_start_time, 3600)
                             start_m, start_s = divmod(start_rem, 60)
                             start_fmt = f"{int(start_h):02d}.{int(start_m):02d}.{int(start_s):02d}"
-                            
+                        
                             merged_text = " ".join(current_text)
                             line = f"[{start_fmt}] {current_speaker}: {merged_text}\n"
                             f.write(line)
-                            
-                            # Start a new buffer for the new speaker
-                            current_speaker = speaker
-                            current_start_time = start_time
-                            current_text = [text]
-                            
-                    # Write the final remaining buffer after the loop finishes
-                    if current_speaker:
-                        start_h, start_rem = divmod(current_start_time, 3600)
-                        start_m, start_s = divmod(start_rem, 60)
-                        start_fmt = f"{int(start_h):02d}.{int(start_m):02d}.{int(start_s):02d}"
-                        
-                        merged_text = " ".join(current_text)
-                        line = f"[{start_fmt}] {current_speaker}: {merged_text}\n"
-                        f.write(line)
             
-            console.print(f"   ✅ [bold green]Raw transcription saved:[/] {output_txt}")
+                progress.console.print(f"   ✅ [bold green]Raw transcription saved:[/] {output_txt}")
+                progress.update(file_task, description=f"[magenta]{base_name}: LLM post-process")
             
-            # 4. LLM Post-Processing Magic
-            if global_config.get("post_processing", {}).get("enabled", False):
-                with console.status("[bold magenta]Step 4: LLM Post-Processing (Formatting & Summary)...", spinner="point"):
+                # 4. LLM Post-Processing Magic
+                if global_config.get("post_processing", {}).get("enabled", False):
                     with open(output_txt, "r", encoding="utf-8") as f:
                         raw_text = f.read()
-                    
+                
                     formatted_text = run_post_processing(raw_text, global_config)
-                    
+                
                     final_output_path = os.path.join(output_dir, f"{base_name}_formatted.md")
                     with open(final_output_path, "w", encoding="utf-8") as f:
                         f.write(formatted_text)
-                        
-                console.print(f"   ✨ [bold green]LLM formatted transcript saved:[/] {final_output_path}")
-                
-            # Ask to delete the original audio
-            console.print(f"\n[bold yellow]❓ Finished processing '{os.path.basename(audio_path)}'[/]")
-            while True:
-                del_choice = console.input("[bold]Delete original media file? [Y]es, [N]o: [/]").strip().upper()
-                if del_choice == 'Y':
+                    
+                    progress.console.print(f"   ✨ [bold green]LLM formatted transcript saved:[/] {final_output_path}")
+            
+                progress.remove_task(file_task)
+                progress.update(job_task, advance=1)
+                successfully_processed.append(audio_path)
+            
+            except Exception as e:
+                progress.console.print(f"   ❌ [bold red]Failed to process file {audio_path}:[/] {e}")
+
+    if successfully_processed:
+        console.print("\n[bold yellow]❓ Finished processing all files.[/]")
+        while True:
+            del_choice = console.input(f"[bold]Delete all {len(successfully_processed)} original media files? [Y]es, [N]o: [/]").strip().upper()
+            if del_choice == 'Y':
+                for audio_path in successfully_processed:
                     try:
                         os.remove(audio_path)
                         console.print(f"   🗑️ [dim]Deleted {audio_path}[/]")
                     except Exception as e:
                         console.print(f"   ❌ [red]Could not delete {audio_path}: {e}[/]")
-                    break
-                elif del_choice == 'N':
-                    console.print("   💾 [dim]Kept original file.[/]")
-                    break
-                else:
-                    console.print("[red]Invalid choice. Please enter Y or N.[/]")
-                    
-        except Exception as e:
-            console.print(f"   ❌ [bold red]Failed to process file {audio_path}:[/] {e}")
+                break
+            elif del_choice == 'N':
+                console.print("   💾 [dim]Kept all original files.[/]")
+                break
+            else:
+                console.print("[red]Invalid choice. Please enter Y or N.[/]")
 
 if __name__ == "__main__":
     import argparse

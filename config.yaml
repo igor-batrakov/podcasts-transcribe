@@ -73,9 +73,17 @@ performance:
 # -----------------
 cache:
   # Maximum size of the temporary WAV audio folder (in Megabytes).
-  max_size_mb: 1000
+  max_size_mb: 2000
   # File Time-to-Live (in Days). Files older than this threshold without being accessed will be deleted from cache.
-  max_age_days: 1
+  max_age_days: 2
+
+# -----------------
+# PROCESSING TWEAKS
+# -----------------
+processing:
+  # If true, ignores segments assigned to UNKNOWN speakers or those containing only [Music]/[Noise] tags.
+  # Also explicitly removes the common "Susbtitles created by DimaTorzok" hallucination.
+  skip_noise_and_music: true
 
 # -----------------
 # POST-PROCESSING SETTINGS (LLM Integration)

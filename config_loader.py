@@ -25,7 +25,7 @@ def load_global_config():
         # Extract Whisper parameters (all root keys except specific sections)
         whisper_kwargs = {}
         for key, value in yaml_config.items():
-            if key not in ["diarization", "cache", "post_processing", "paths", "performance"]:
+            if key not in ["diarization", "cache", "post_processing", "paths", "performance", "processing"]:
                 whisper_kwargs[key] = value
                         
         return {
@@ -33,7 +33,8 @@ def load_global_config():
             "diarization": yaml_config.get("diarization", default_config["diarization"]),
             "cache": yaml_config.get("cache", default_config["cache"]),
             "post_processing": yaml_config.get("post_processing", {}),
-            "paths": yaml_config.get("paths", default_config["paths"])
+            "paths": yaml_config.get("paths", default_config["paths"]),
+            "processing": yaml_config.get("processing", {})
         }
     except Exception as e:
         print(f"[ERROR] Failed to load {config_path}: {e}")
