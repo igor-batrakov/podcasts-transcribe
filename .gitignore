@@ -8,6 +8,7 @@ env/
 .DS_Store
 .vscode/
 .idea/
+.agent/
 
 # Project Folders
 .cache/
