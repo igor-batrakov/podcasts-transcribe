@@ -7,5 +7,5 @@
 
 ## Backlog for Tomorrow
 
-- [ ] **Smart Speaker Auto-Naming**: Automatically identify and rename speakers (e.g., `SPEAKER_00` -> `Игорь`) by analyzing the transcription text to see if they introduce themselves or are addressed by others.
-- [ ] **Transcript Polish**: Perform a general "cleanup" and formatting polish on the final output transcript file.
+- [x] **Smart Speaker Auto-Naming**: Automatically identify and rename speakers (e.g., `SPEAKER_00` -> `Игорь`) by analyzing the transcription text to see if they introduce themselves or are addressed by others.
+- [x] **Transcript Polish**: Perform a general "cleanup" and formatting polish on the final output transcript file.

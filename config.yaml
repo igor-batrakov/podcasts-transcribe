@@ -52,6 +52,10 @@ diarization:
   # the script will average their voice embeddings on the next run and delete the duplicate (#5).
   auto_merge_duplicates: true
 
+  # Smart Auto-Naming feature using LLM Analysis
+  # When true, the script will pass the first 15 mins of transcript to an LLM to guess real names for GLOBAL_SPEAKER_X
+  auto_naming: true
+
 # -----------------
 # PERFORMANCE SETTINGS
 # -----------------
@@ -90,7 +94,7 @@ processing:
 # -----------------
 post_processing:
   # Enable or disable sending the final transcript to a Large Language Model for formatting and summarization.
-  enabled: false
+  enabled: true
   
   # Select the provider: "ollama" (Local, FREE), "openai" (Cloud API), "anthropic" (Cloud API)
   # IMPORTANT: For "openai" and "anthropic", you must set OPENAI_API_KEY or ANTHROPIC_API_KEY in the .env file.
@@ -105,11 +109,16 @@ post_processing:
     You are an expert podcast editor. 
     1. Fix the punctuation of this Russian transcript.
     2. Format the text into readable paragraphs for a blog post.
-    3. If there are GLOBAL_SPEAKER_X tags, try to infer their real names from the conversation context and replace the tags quietly.
-    4. Provide a short 3-sentence summary of the episode at the very beginning of your response.
+    3. Do NOT invent new text. Only output the cleaned transcript.
     
     Here is the transcript:
     {text}
+
+  # To prevent context window overflow (e.g. 8k context on Ollama), long transcripts are chunked.
+  # Size of each chunk in number of lines (timestamps). 
+  chunk_size_lines: 100
+  # Number of overlapping lines fed to the AI to maintain dialog continuity between chunks.
+  overlap_lines: 10
 
 # -----------------
 # SYSTEM PATHS (Directories)

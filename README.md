@@ -108,6 +108,8 @@ python transcribe.py --test 120
 - **Автоматическое слияние дубликатов**: Включено по умолчанию (`auto_merge_duplicates: true`). 
 - **Лимиты кэша (`max_size_mb` / `max_age_days`)**: Задайте сколько мегабайт и дней могут жить сконвертированные аудиофайлы во временной папке, чтобы не забивать диск.
 - **Удаление оригиналов**: По умолчанию выключено. Если включить, скрипт будет интерактивно спрашивать хотите ли вы удалить медиа-файл в конце успешной пакетной обработки.
+- **Интеграция с LLM (`post_processing`)**: Автоматическая расстановка знаков препинания и деление на абзацы (через локальную `Ollama` или облачные `OpenAI` / `Anthropic`). Если локальная языковая модель не справляется с объемом 2-часовых аудио, можно настроить параметры разбиения на перекрывающиеся куски (`chunk_size_lines` и `overlap_lines`).
+- **Умное именование спикеров (`auto_naming`)**: Если включено, в качестве контекста первые 15 минут текста скармливаются нейросети. Она распознает настоящие имена участников (кто как представился) и автоматически заменяет `GLOBAL_SPEAKER_1` на "Антон" по всему тексту.
 
 ## Лицензия
 
@@ -130,6 +132,7 @@ A script for automatic podcast transcription with speaker diarization. Integrate
     *   **Memorization:** Digital voice embeddings are saved in a local database. The program automatically recognizes hosts in new episodes.
     *   **Voice Evolution (EMA):** The script blends 10% of the new voice into the reference database upon each match. This maintains accuracy even if a speaker changes their microphone, voice ages, or has a cold.
     *   **Auto-Merge Duplicates:** If the neural network makes a mistake and creates a duplicate profile, simply assign it the same human name in the local podcast config. On the next run, the script will automatically average their voices and delete the duplicate!
+    *   **🪄 Smart Auto-Naming (LLM):** If enabled, the script parses the transcription context of the first 15 minutes of audio, sending it to an LLM (Ollama, OpenAI, or Anthropic) to extract the real names from the introductions. It seamlessly substitutes `GLOBAL_SPEAKER_1` with "John" automatically in the output file and saves it back to the database.
 *   **🏎️ Extreme Optimization (Performance):**
     *   **Upfront Setup (Interactive CLI):** The script scans all media upfront and asks which Diarization model to use for new series (Skip, Fast, Accurate) _before_ starting heavy processing. Then it runs 100% autonomously.
     *   **Voice Activity Detection (VAD):** Enable `vad_enabled` in `config.yaml` to run audio through a lightweight speech-detector first, completely clipping out silence before the heavy Diarization model kicks in. Saves massive GPU time.

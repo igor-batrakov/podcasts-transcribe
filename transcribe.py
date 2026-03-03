@@ -23,7 +23,7 @@ from config_loader import load_global_config
 from utils import get_series_name, get_unique_filename
 from audio_converter import convert_to_wav
 from speaker_manager import load_series_config, load_series_embeddings, save_series_config, save_series_embeddings, get_global_speaker_mapping, get_speaker, merge_duplicate_speakers
-from post_processing import run_post_processing
+from post_processing import run_post_processing, extract_speaker_names_with_llm
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeRemainingColumn, TaskProgressColumn
@@ -438,13 +438,49 @@ def process_podcasts(time_limit=None):
                             f.write(line)
             
                 progress.console.print(f"   ✅ [bold green]Raw transcription saved:[/] {output_txt}")
+                
+                # Load raw text into memory for subsequent LLM processing
+                with open(output_txt, "r", encoding="utf-8") as f:
+                    raw_text = f.read()
+
+                # 4. LLM Smart Auto-Naming
+                new_names = {}
+                auto_naming = global_config.get("speaker_identification", {}).get("auto_naming", False)
+                if auto_naming and global_config.get("post_processing", {}).get("enabled", False):
+                    progress.update(file_task, description=f"[magenta]{base_name}: LLM auto-naming")
+                    # Extract roughly the first 15 mins (approx 200 lines) of transcript for context
+                    lines_arr = raw_text.split("\n")
+                    context_chunk = "\n".join(list(lines_arr)[0:200])
+                    new_names = extract_speaker_names_with_llm(context_chunk, global_config)
+                    
+                    if new_names:
+                        # Update the tracking dict locally
+                        updated_count: int = 0
+                        for global_spk, real_name in new_names.items():
+                            if global_spk in config_db:
+                                config_db[global_spk] = real_name
+                                updated_count += 1
+                        
+                        if updated_count > 0:
+                            # Save back to yaml
+                            save_series_config(series_name, config_db)
+                            progress.console.print(f"   🪄 [bold green]Learned {updated_count} new names from context![/]")
+
+                # Perform text replacement in memory to swap GLOBAL_SPEAKER_X with real human names
+                # We do this even if auto_naming is off, just to ensure manual names from config are applied 
+                # before we send it to post-processing polish
+                if new_names:
+                    for global_spk, real_name in new_names.items():
+                        raw_text = raw_text.replace(global_spk, real_name)
+                    
+                # Rewrite the raw file with the real names
+                with open(output_txt, "w", encoding="utf-8") as f:
+                    f.write(raw_text)
+
                 progress.update(file_task, description=f"[magenta]{base_name}: LLM post-process")
             
-                # 4. LLM Post-Processing Magic
+                # 5. LLM Post-Processing Polish
                 if global_config.get("post_processing", {}).get("enabled", False):
-                    with open(output_txt, "r", encoding="utf-8") as f:
-                        raw_text = f.read()
-                
                     formatted_text = run_post_processing(raw_text, global_config)
                 
                     final_output_path = os.path.join(output_dir, f"{base_name}_formatted.md")

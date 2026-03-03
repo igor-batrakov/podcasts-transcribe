@@ -1,4 +1,5 @@
 import os
+import json
 import requests
 from openai import OpenAI
 from anthropic import Anthropic
@@ -65,10 +66,58 @@ def process_with_anthropic(text: str, model: str, prompt_template: str, api_key:
     except Exception as e:
         raise Exception(f"Anthropic API error: {e}")
 
+def extract_speaker_names_with_llm(raw_text: str, config: dict) -> dict:
+    """
+    Extracts real speaker names from the transcript context (typically introductions).
+    Returns a dictionary mapping GLOBAL_SPEAKER_X -> Real Name.
+    """
+    pp_config = config.get("post_processing", {})
+    provider = pp_config.get("provider", "ollama").lower()
+    model = pp_config.get("model", "llama3")
+    
+    prompt = (
+        "Analyze the following Russian transcript excerpt and identify the real names "
+        "of the speakers labeled as GLOBAL_SPEAKER_1, GLOBAL_SPEAKER_2, etc. "
+        "Only extract names if the speakers introduce themselves or address each other by name. "
+        "Return the result ONLY as a valid JSON dictionary where keys are the GLOBAL_SPEAKER_X "
+        "labels and values are the identified real names. Do not include any other text.\n\n"
+        f"Transcript:\n{raw_text}"
+    )
+
+    print(f"\n🔍 [LLM] Analyzing context for real speaker names using '{provider}'...")
+    
+    try:
+        response_text = ""
+        if provider == "ollama":
+            response_text = process_with_ollama(prompt, model, "{text}")
+        elif provider == "openai":
+            api_key = os.environ.get("OPENAI_API_KEY", "")
+            response_text = process_with_openai(prompt, model, "{text}", api_key)
+        elif provider == "anthropic":
+            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+            response_text = process_with_anthropic(prompt, model, "{text}", api_key)
+        else:
+            return {}
+            
+        # Clean up possible markdown formatting from LLM response
+        response_text = response_text.replace("```json", "").replace("```", "").strip()
+        names_dict = json.loads(response_text)
+        
+        valid_names = {}
+        for k, v in names_dict.items():
+            if isinstance(k, str) and k.startswith("GLOBAL_SPEAKER_") and isinstance(v, str) and v.strip() and v != "Unknown":
+                valid_names[k] = v.strip()
+                
+        return valid_names
+    except Exception as e:
+        print(f"⚠️ [LLM] Name extraction failed or returned invalid JSON: {e}")
+        return {}
+
+
 def run_post_processing(transcript_text: str, config: dict) -> str:
     """
     Main entry point for LLM post-processing.
-    Routes the request to the correct provider based on config.
+    Chunks the transcript to avoid context limits and routes to the correct provider.
     """
     pp_config = config.get("post_processing", {})
     if not pp_config.get("enabled", False):
@@ -78,22 +127,57 @@ def run_post_processing(transcript_text: str, config: dict) -> str:
     model = pp_config.get("model", "llama3")
     prompt_template = pp_config.get("prompt_template", "Fix punctuation and format this transcript:\n\n{text}")
     
-    print(f"\n🧠 [LLM] Post-processing transcript using '{provider}' (model: {model})...")
+    chunk_size = int(pp_config.get("chunk_size_lines", 100))
+    overlap = int(pp_config.get("overlap_lines", 10))
     
-    try:
-        if provider == "ollama":
-            return process_with_ollama(transcript_text, model, prompt_template)
-        elif provider == "openai":
-            api_key = os.environ.get("OPENAI_API_KEY", "")
-            return process_with_openai(transcript_text, model, prompt_template, api_key)
-        elif provider == "anthropic":
-            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-            return process_with_anthropic(transcript_text, model, prompt_template, api_key)
-        else:
-            print(f"⚠️ [LLM] Unknown provider '{provider}'. Skipping post-processing.")
+    lines = transcript_text.strip().split("\n")
+    total_lines = len(lines)
+    
+    # If transcript is short, don't overcomplicate with chunking
+    if total_lines <= chunk_size:
+        print(f"\n🧠 [LLM] Post-processing transcript ({total_lines} lines) using '{provider}' (model: {model})...")
+        try:
+            return _process_chunk(transcript_text, provider, model, prompt_template)
+        except Exception as e:
+            print(f"❌ [LLM] Post-processing failed: {e}")
             return transcript_text
+
+    # Chunking logic for long transcripts
+    print(f"\n🧠 [LLM] Post-processing large transcript ({total_lines} lines) in chunks using '{provider}'...")
+    
+    final_output = []
+    start_idx = 0
+    chunk_index = 1
+    
+    while start_idx < total_lines:
+        end_idx = min(start_idx + chunk_size, total_lines)
+        chunk_lines = lines[start_idx:end_idx]
+        chunk_text = "\n".join(chunk_lines)
+        
+        print(f"   ⏳ Processing chunk {chunk_index} (lines {start_idx+1}-{end_idx})...")
+        try:
+            processed_chunk = _process_chunk(chunk_text, provider, model, prompt_template)
+            final_output.append(processed_chunk.strip())
+        except Exception as e:
+            print(f"❌ [LLM] Failed on chunk {chunk_index}: {e}")
+            print("   ⚠️ Keeping original text for this chunk.")
+            final_output.append(chunk_text)
             
-    except Exception as e:
-        print(f"❌ [LLM] Post-processing failed: {e}")
-        print("⚠️ [LLM] Returning original unformatted transcript.")
-        return transcript_text
+        start_idx += (chunk_size - overlap)
+        chunk_index += 1
+        
+    return "\n\n".join(final_output)
+
+
+def _process_chunk(text: str, provider: str, model: str, prompt_template: str) -> str:
+    """Helper to route a single chunk of text to the requested provider."""
+    if provider == "ollama":
+        return process_with_ollama(text, model, prompt_template)
+    elif provider == "openai":
+        api_key = os.environ.get("OPENAI_API_KEY", "")
+        return process_with_openai(text, model, prompt_template, api_key)
+    elif provider == "anthropic":
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        return process_with_anthropic(text, model, prompt_template, api_key)
+    else:
+        raise ValueError(f"Unknown provider '{provider}'")
