@@ -27,6 +27,21 @@ def process_with_ollama(text: str, model: str, prompt_template: str) -> str:
     except Exception as e:
         raise Exception(f"Ollama API error: {e}")
 
+def unload_ollama_model(model: str) -> None:
+    """Force Ollama to unload the model from memory."""
+    url = "http://localhost:11434/api/generate"
+    payload = {
+        "model": model,
+        "keep_alive": 0
+    }
+    try:
+        # We don't need a prompt, just the keep_alive=0 to unload immediately.
+        requests.post(url, json=payload, timeout=5)
+        print(f"   🧹 [dim]Ollama model '{model}' explicitly unloaded from memory.[/dim]")
+    except Exception as e:
+        print(f"⚠️ [dim]Could not explicitly unload Ollama model: {e}[/dim]")
+
+
 def process_with_openai(text: str, model: str, prompt_template: str, api_key: str) -> str:
     """Send text to OpenAI API."""
     if not api_key:
@@ -66,25 +81,38 @@ def process_with_anthropic(text: str, model: str, prompt_template: str, api_key:
     except Exception as e:
         raise Exception(f"Anthropic API error: {e}")
 
-def extract_speaker_names_with_llm(raw_text: str, config: dict) -> dict:
+def extract_podcast_metadata_with_llm(raw_text: str, config: dict) -> dict:
     """
-    Extracts real speaker names from the transcript context (typically introductions).
-    Returns a dictionary mapping GLOBAL_SPEAKER_X -> Real Name.
+    Extracts real speaker names and podcast metadata from the transcript context.
+    Returns a dictionary with 'speakers' and 'metadata'.
     """
     pp_config = config.get("post_processing", {})
     provider = pp_config.get("provider", "ollama").lower()
-    model = pp_config.get("model", "llama3")
+    model = pp_config.get("model", "qwen2.5:3b")
     
     prompt = (
-        "Analyze the following Russian transcript excerpt and identify the real names "
-        "of the speakers labeled as GLOBAL_SPEAKER_1, GLOBAL_SPEAKER_2, etc. "
-        "Only extract names if the speakers introduce themselves or address each other by name. "
-        "Return the result ONLY as a valid JSON dictionary where keys are the GLOBAL_SPEAKER_X "
-        "labels and values are the identified real names. Do not include any other text.\n\n"
+        "Analyze the following Russian transcript excerpt and extract metadata and speaker names. "
+        "Identify the real names of the speakers labeled as GLOBAL_SPEAKER_1, GLOBAL_SPEAKER_2, etc. "
+        "Also try to find the podcast's official show name, episode number, release date, and main topic. "
+        "If you cannot find a specific piece of metadata, return null for it. "
+        "Return the result ONLY as a valid JSON dictionary using the exact following schema:\n"
+        "{\n"
+        '  "speakers": {\n'
+        '    "GLOBAL_SPEAKER_1": {"name": "Александр", "confidence": 95}\n'
+        '  },\n'
+        '  "metadata": {\n'
+        '    "show_name": "Podcast Name",\n'
+        '    "episode_number": "123",\n'
+        '    "date": "December 12",\n'
+        '    "topic": "Main discussion topic"\n'
+        '  }\n'
+        "}\n"
+        "Where 'confidence' is an integer from 0 to 100 representing how sure you are based on the context. "
+        "Do not include any other text.\n\n"
         f"Transcript:\n{raw_text}"
     )
 
-    print(f"\n🔍 [LLM] Analyzing context for real speaker names using '{provider}'...")
+    print(f"\n🔍 [LLM] Analyzing context for real speaker names using '{provider}' (model: {model})...")
     
     try:
         response_text = ""
@@ -101,20 +129,33 @@ def extract_speaker_names_with_llm(raw_text: str, config: dict) -> dict:
             
         # Clean up possible markdown formatting from LLM response
         response_text = response_text.replace("```json", "").replace("```", "").strip()
-        names_dict = json.loads(response_text)
+        result_dict = json.loads(response_text)
         
-        valid_names = {}
-        for k, v in names_dict.items():
-            if isinstance(k, str) and k.startswith("GLOBAL_SPEAKER_") and isinstance(v, str) and v.strip() and v != "Unknown":
-                valid_names[k] = v.strip()
+        valid_data = {"speakers": {}, "metadata": {}}
+        speakers_dict = result_dict.get("speakers", {})
+        metadata_dict = result_dict.get("metadata", {})
+        
+        for k, v in speakers_dict.items():
+            if isinstance(k, str) and k.startswith("GLOBAL_SPEAKER_") and isinstance(v, dict):
+                name = v.get("name")
+                conf = v.get("confidence", 0)
+                if isinstance(name, str) and name.strip() and name != "Unknown":
+                    valid_data["speakers"][k] = {"name": name.strip(), "confidence": conf}
+                    
+        valid_data["metadata"] = {
+            "show_name": metadata_dict.get("show_name") if isinstance(metadata_dict.get("show_name"), str) else None,
+            "episode_number": metadata_dict.get("episode_number") if isinstance(metadata_dict.get("episode_number"), str) else None,
+            "date": metadata_dict.get("date") if isinstance(metadata_dict.get("date"), str) else None,
+            "topic": metadata_dict.get("topic") if isinstance(metadata_dict.get("topic"), str) else None,
+        }
                 
-        return valid_names
+        return valid_data
     except Exception as e:
         print(f"⚠️ [LLM] Name extraction failed or returned invalid JSON: {e}")
-        return {}
+        return {"speakers": {}, "metadata": {}}
 
 
-def run_post_processing(transcript_text: str, config: dict) -> str:
+def run_post_processing(transcript_text: str, config: dict, is_single_speaker: bool = False) -> str:
     """
     Main entry point for LLM post-processing.
     Chunks the transcript to avoid context limits and routes to the correct provider.
@@ -125,7 +166,17 @@ def run_post_processing(transcript_text: str, config: dict) -> str:
         
     provider = pp_config.get("provider", "ollama").lower()
     model = pp_config.get("model", "llama3")
-    prompt_template = pp_config.get("prompt_template", "Fix punctuation and format this transcript:\n\n{text}")
+    
+    if is_single_speaker:
+        prompt_template = pp_config.get(
+            "prompt_single_speaker", 
+            "Format this single speaker transcript as an article:\n\n{text}"
+        )
+    else:
+        prompt_template = pp_config.get(
+            "prompt_multi_speaker", 
+            "Fix punctuation and format this transcript:\n\n{text}"
+        )
     
     chunk_size = int(pp_config.get("chunk_size_lines", 100))
     overlap = int(pp_config.get("overlap_lines", 10))
@@ -153,10 +204,13 @@ def run_post_processing(transcript_text: str, config: dict) -> str:
         end_idx = min(start_idx + chunk_size, total_lines)
         chunk_lines = lines[start_idx:end_idx]
         chunk_text = "\n".join(chunk_lines)
-        
-        print(f"   ⏳ Processing chunk {chunk_index} (lines {start_idx+1}-{end_idx})...")
+        import sys
+        sys.stdout.write(f"\n   ⏳ Processing chunk {chunk_index} (lines {start_idx+1}-{end_idx})... ")
+        sys.stdout.flush()
         try:
             processed_chunk = _process_chunk(chunk_text, provider, model, prompt_template)
+            sys.stdout.write("Done!\n")
+            sys.stdout.flush()
             final_output.append(processed_chunk.strip())
         except Exception as e:
             print(f"❌ [LLM] Failed on chunk {chunk_index}: {e}")

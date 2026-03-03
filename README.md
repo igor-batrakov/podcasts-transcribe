@@ -2,118 +2,107 @@
 
 *[English Version Below](#english-version)*
 
-Скрипт для автоматической расшифровки подкастов (транскрибации) с разделением по спикерам (диаризацией). Интегрирован с моделями Whisper (MLX) и Pyannote Audio, оптимизирован для работы на Apple Silicon.
-
-## Основные функции
-
-*   **⚡️ MLX Whisper Транскрибация:** Использует мощную модель `mlx-whisper-large-v3-ru-podlodka`, работающую напрямую на графическом ускорителе Apple Silicon (MPS) для экстремально быстрой работы.
-*   **🗣 Распознавание спикеров (Diarization):** Интегрирована новейшая open-source модель `pyannote/speaker-diarization-3.1`. Скрипт интеллектуально склеивает пословные таймкоды Whisper с таймкодами Pyannote, чтобы выдавать текст вида: `[00:01:23] ИМЯ_СПИКЕРА: текст...`.
-*   **🧠 Кросс-эпизодная память на голоса:**
-    *   **Авто-серии:** Скрипт парсит префиксы из имен файлов (например, в файлах `rt_podcast_10.mp3` и `rt_podcast_11.mp3` будет выделена общая база спикеров серии `rt_podcast`).
-    *   **Запоминание:** Цифровые слепки голосов (embeddings) записываются в локальную базу данных. Программа сама узнает ведущих в новых выпусках.
-    *   **Эволюция голоса (EMA):** Скрипт подмешивает 10% нового голоса в эталонную базу при каждом совпадении. Это спасает качество при смене микрофона или взрослении диктора.
-    *   **Авто-слияние:** Если нейросеть ошиблась и создала дубликат профиля, просто задайте ему такое же человеческое имя в локальном конфиге подкаста. При следующем запуске скрипт автоматически усреднит их голоса и удалит дубликат!
-*   **🏎️ Экстремальная оптимизация (Performance):**
-    *   **Предварительный опрос (Interactive CLI):** Скрипт анализирует все медиафайлы в папке и _до начала тяжелой обработки_ спрашивает у вас какую модель Диаризации использовать для новой серии (Skip, Fast, Accurate). После этого он уходит в полностью автономный режим.
-    *   **Voice Activity Detection (VAD):** Можно включить `vad_enabled` в `config.yaml`, чтобы скрипт прогнал аудио через легкую нейросеть-детектор речи и полностью вырезал тишину до того, как скормить аудио тяжелому алгоритму Диаризации. Это экономит колоссальное количество GPU.
-    *   **Аппаратное ускорение (Batching):** Поддерживается обработка аудио батчами (пакетами). Вы можете настроить `batch_size` и `num_workers` в `config.yaml` для максимальной загрузки многоядерных процессоров и видеокарт.
-*   **💾 Кеширование аудио:** Встроенный LRU-кэш для сконвертированных `wav` файлов спасает от повторных прогонов `ffmpeg`.
-
-## Структура проекта
-
-```text
-podcasts_transcribe/
-├── input/                  <-- Кладите сюда MP3, M4A, FLAC, WAV
-├── output/                 <-- Забирайте отсюда готовые TXT
-├── models/                 <-- Папка скачанных нейросетей
-├── speakers/               <-- Базы голосов (вектора + YAML-файлы имен)
-├── .cache/                 <-- Папка кэша аудио
-├── config.yaml             <-- Главные настройки (пороги, размеры кэша)
-└── transcribe.py           <-- Скрипт запуска
-```
+Скрипт для автоматической расшифровки подкастов (транскрибации) с разделением по спикерам (диаризацией). Интегрирован с моделями Whisper (MLX), Pyannote Audio и локальными LLM (Ollama), глубоко оптимизирован для Apple Silicon.
 
 ## Установка
 
-1. **Системные зависимости:** Убедитесь, что установлена утилита `ffmpeg`. На Mac: `brew install ffmpeg`.
-2. **Python:** Создайте виртуальное окружение (Python 3.9+) и установите пакеты из `requirements.txt`:
+1. **Зависимости:** Установите утилиты: `brew install ffmpeg ollama`
+2. **Python:** Создайте окружение (Python 3.9+) и установите пакеты:
    ```bash
    python -m venv .venv
    source .venv/bin/activate
    pip install -r requirements.txt
    ```
-3. **Ключ доступа к моделям Pyannote:**
-    * Модели Pyannote Audio являются открытыми, но требуют согласия с правилами на HuggingFace.
-    * Перейдите на [speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) и нажмите "Agree".
-    * Перейдите на [segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0) и нажмите "Agree".
-    * Если планируете использовать Fast Model, перейдите на [speaker-diarization-2.1](https://huggingface.co/pyannote/speaker-diarization-2.1) и [segmentation](https://huggingface.co/pyannote/segmentation) и тоже нажмите "Agree".
-    * (Опционально) Для VAD: перейдите на [voice-activity-detection](https://huggingface.co/pyannote/voice-activity-detection) и нажмите "Agree".
-    * Создайте HF Token в настройках аккаунта HuggingFace.
-4. Создайте файл `.env` в корне проекта и впишите туда токен:
+3. **Ключи доступа Pyannote:**
+    * Модели Pyannote Audio требуют согласия на HuggingFace.
+    * Перейдите на [segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0) и [speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1), нажмите "Agree".
+    * Для быстрых моделей и VAD: также согласитесь с `speaker-diarization-2.1`, `segmentation` и `voice-activity-detection`.
+4. Создайте токен в настройках HuggingFace и добавьте его в `.env`:
     ```env
     # .env
     HF_TOKEN="твой_hf_токен_здесь"
     ```
 
-## Использование (Быстрый старт)
+## Быстрый старт
 
-1. Закиньте любые медиа-файлы в папку `input/`.
-2. Запустите скрипт:
-   ```bash
-   python transcribe.py
-   ```
-3. Заберите готовый текстовый документ из папки `output/`!
+1. Откройте терминал и скачайте LLM модель для постобработки: `ollama run qwen2.5:3b` (затем нажмите Ctrl+D для выхода).
+2. Закиньте медиа-файлы (MP3/M4A/WAV) в папку `input/`.
+3. Запустите скрипт: `python transcribe.py` (для тестов используйте `python transcribe.py --test 120` для первых 2 минут).
+4. Готовые файлы `.txt` и форматированные `.md` появятся в папке `output/`.
 
-*(Опционально) Для тестов:* Чтобы прогнать только первые 2 минуты аудио:
-```bash
-python transcribe.py --test 120
-```
+---
 
-## Как переименовать `GLOBAL_SPEAKER` в реальное имя?
+## Ключевые фичи и Настройки (config.yaml)
 
-1. Когда прогон `transcribe.py` для подкаста завершится, зайдите в папку `speakers/название_вашей_серии/`.
-2. Откройте файл `config.yaml`.
-3. Присвойте реальные имена:
-    ```yaml
-    GLOBAL_SPEAKER_1: Игорь
-    GLOBAL_SPEAKER_2: Umputun
-    ```
-4. В следующих подкастах программа автоматически будет подставлять "Игорь" и "Umputun". 
-5. *Ошибки распознавания?* Если в новом подкасте появился `GLOBAL_SPEAKER_5`, и это на самом деле был Игорь с глухим микрофоном — просто переименуйте `GLOBAL_SPEAKER_5: Игорь`. Программа автоматически сольет их голоса в единую базу!
-
-## Поддерживаемые языки и модели
-
-По умолчанию скрипт скачивает и использует модель `mlx-whisper-large-v3-ru-podlodka`, которая специально дообучена под подкасты. Эта модель:
-*   **Идеально распознает русский язык,** включая сильный мат, сленг, англицизмы и сложные перебивания.
-*   **Отлично распознает английский язык.**
-
-**Как транскрибировать другие языки (Испанский, Японский и тд.)?**
-Базовая архитектура Whisper поддерживает **99 языков**. Чтобы включить автоопределение для любого языка:
-1. Откройте `config.yaml`.
-2. Удалите специальную русскую модель и впишите официальную мультиязычную от сообщества MLX:
-   ```yaml
-   path_or_hf_repo: mlx-community/whisper-large-v3-mlx
-   ```
-3. Измените жестко заданный язык на `null` (автоопределение):
-   ```yaml
-   language: null
-   ```
-
-## Глобальные настройки (config.yaml)
-
-В корне лежит `config.yaml` с комментариями на английском языке. Там можно настроить:
-- **Транскрибацию (`language` & `path_or_hf_repo`)**: Переключать модели и языки (по умолчанию строго `ru` для скорости).
-- **Защита от галлюцинаций**: Меняйте `condition_on_previous_text` или `compression_ratio_threshold`, чтобы Whisper не зацикливался на шумах. Включите `skip_noise_and_music: true`, чтобы вырезать куски с тишиной, [UNKNOWN] спикерами, вздохами и музыкой, а также чистить классические галлюцинации Whisper.
-- **Чувствительность распознавания голосов Pyannote**: Меняйте `similarity_threshold` (0.0 — 1.0), чтобы скрипт строже или мягче узнавал гостей из прошлых выпусков.
-- **Эволюцию голоса (`ema_alpha`)**: Насколько быстро скрипт адаптируется к изменениям голоса спикера.
-- **Автоматическое слияние дубликатов**: Включено по умолчанию (`auto_merge_duplicates: true`). 
-- **Лимиты кэша (`max_size_mb` / `max_age_days`)**: Задайте сколько мегабайт и дней могут жить сконвертированные аудиофайлы во временной папке, чтобы не забивать диск.
-- **Удаление оригиналов**: По умолчанию выключено. Если включить, скрипт будет интерактивно спрашивать хотите ли вы удалить медиа-файл в конце успешной пакетной обработки.
-- **Интеграция с LLM (`post_processing`)**: Автоматическая расстановка знаков препинания и деление на абзацы (через локальную `Ollama` или облачные `OpenAI` / `Anthropic`). Если локальная языковая модель не справляется с объемом 2-часовых аудио, можно настроить параметры разбиения на перекрывающиеся куски (`chunk_size_lines` и `overlap_lines`).
-- **Умное именование спикеров (`auto_naming`)**: Если включено, в качестве контекста первые 15 минут текста скармливаются нейросети. Она распознает настоящие имена участников (кто как представился) и автоматически заменяет `GLOBAL_SPEAKER_1` на "Антон" по всему тексту.
+*   **⚡️ MLX Whisper Транскрибация:** Использует мощную модель `mlx-whisper-large-v3-ru-podlodka`, работающую напрямую на GPU Mac для экстремально быстрой работы. Для других языков: замените модель в `config.yaml` на официальную `mlx-community/whisper-large-v3-mlx`.
+*   **🗣 Кросс-эпизодная память (Pyannote):** Скрипт учится узнавать ведущих. Имена спикеров собираются в `speakers/`. Вручную переименуйте `GLOBAL_SPEAKER_1`, и программа назовет его так же в следующих выпусках (и сольет дубликаты голосов).
+*   **🧠 Умная Постобработка (LLM):** 
+    * Автоматическая пунктуация и абзацы через локальную Ollama (Опционально: OpenAI/Anthropic). Вы можете поменять используемую модель (по умолчанию `qwen2.5:3b`) в `config.yaml` -> `post_processing.model`.
+    * **Умный Заголовок:** Нейросеть сама анализирует начало разговора, доставая название шоу, тему и реальные имена участников, собирая красивый Markdown-заголовок.
+    * **Определение муз. вставок:** Скрипт по длительности и контексту автоматически вычисляет "джинглы", скрывая их из основной базы спикеров и помечая курсивом.
+*   **🏎️ Экстремальная оптимизация памяти:**
+    * **Авто-лимиты (Mac 16GB):** Программа автоматически отключает мультипроцессинг и снижает пакетную нагрузку, если у вас 16 ГБ ОЗУ или меньше. Ошибок нехватки памяти (OOM) не будет!
+    * **Анализ тишины (VAD):** Экономит колоссальное количество времени, вырезая тишину до запуска тяжелой диаризации.
+    * **Глобальный конфигуратор:** При старте программа спрашивает, какие настройки применить (Fast/Accurate/Skip), и затем автономно обрабатывает всю папку.
+*   **📊 Прозрачность и Кэширование:** Для каждого аудиофайла дописывается отчет с таймингами обработки в файл `output/processing_report.md`. Вырезанные `.wav` файлы кэшируются для ускорения перезапусков.
 
 ## Лицензия
 
-Этот проект распространяется по лицензии **MIT**. Подробности в файле [LICENSE](LICENSE).
+Распространяется по лицензии **MIT**. Подробности в файле [LICENSE](LICENSE).
+
+---
+---
+
+<a name="english-version"></a>
+
+# Podcasts Transcribe (English)
+
+A heavily-optimized pipeline for automatic podcast transcription, Pyannote-based speaker diarization, and LLM formatting. Built flawlessly for Apple Silicon (MPS).
+
+## Installation
+
+1. **System Dependencies:** Install required binaries: `brew install ffmpeg ollama`
+2. **Python:** Setup your environment (Python 3.9+) and install packages:
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
+3. **Pyannote Models Access Token:**
+    * Visit [segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0) and [speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) on HuggingFace and click "Agree" on their terms.
+    * (Optional) For fast models and VAD, click agree on `speaker-diarization-2.1`, `segmentation`, and `voice-activity-detection`.
+4. Create a User Access Token in HF settings and save it in a `.env` file:
+    ```env
+    # .env
+    HF_TOKEN="your_hf_token_here"
+    ```
+
+## Usage (Quick Start)
+
+1. Open your terminal and pull the local LLM model for post-processing: `ollama run qwen2.5:3b` (then press Ctrl+D to exit).
+2. Drop media files into the `input/` folder.
+3. Run the script: `python transcribe.py` (append `--test 120` to transcribe only the first 2 minutes).
+4. Pick up your generated transcripts and `.md` reports from the `output/` folder!
+
+---
+
+## Key Features & Settings (`config.yaml`)
+
+*   **⚡️ MLX Whisper Transcription:** Utilizes the Russian-optimized `mlx-whisper-large-v3-ru-podlodka` running directly on Apple Silicon GPUs. Switch to `mlx-community/whisper-large-v3-mlx` in `config.yaml` for 99+ languages global support.
+*   **🗣 Cross-Episode Voice Memory:** Remembers host voices across episodes. Rename `GLOBAL_SPEAKER_1` to a real name in the `speakers/` folder, and it will cascade to all future runs and auto-merge duplicate voices.
+*   **🧠 Intelligent Post-Processing (LLM):** 
+    * Punctuation and paragraph formatting via local Ollama (OpenAI/Anthropic also supported). You can change the default model (`qwen2.5:3b`) in `config.yaml` -> `post_processing.model`.
+    * **Smart Markdown Headers:** The LLM auto-extracts podcast names, episode numbers, topics, and speaker introductions to build a beautiful Markdown header document snippet.
+    * **Jingle Detection:** Short audio inserts and musical jingles are detected by length and context, formatted beautifully, and kept cleanly out of the global speaker database.
+*   **🏎️ Adaptive Hardware Optimization:**
+    * **Low-Memory Safety (16GB Macs):** Automatically disables heavy multiprocessing and lowers batch sizes on Macs with 16GB RAM or less to prevent OOM freezes.
+    * **Voice Activity Detection (VAD):** Cuts out entire chunks of silence before intensive processing stages to save massive amounts of GPU time.
+    * **Interactive Upfront CLI:** The script asks you once how you want to handle diarization for new files (Fast / Accurate / Skip), then autonomously batch processes everything.
+*   **📊 Transparent Metrics:** Automatically tracks step-by-step execution durations and appends them to an efficiency log (`output/processing_report.md`). Extracted `.wav` audio is smartly LRU cached.
+
+## License
+
+This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for more information.
 ---
 ---
 

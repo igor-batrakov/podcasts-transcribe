@@ -102,21 +102,34 @@ post_processing:
   provider: ollama
   
   # The specific model to use (e.g., 'llama3.1', 'gpt-4o-mini', 'claude-3-5-sonnet-latest')
-  model: llama3.1
+  model: qwen2.5:3b
   
-  # The system prompt telling the AI how to format your text. '{text}' will be replaced by the raw transcript.
-  prompt_template: >
+  # The system prompt telling the AI how to format your text for standard multi-speaker podcasts. '{text}' will be replaced by the raw transcript.
+  prompt_multi_speaker: >
     You are an expert podcast editor. 
     1. Fix the punctuation of this Russian transcript.
-    2. Format the text into readable paragraphs for a blog post.
-    3. Do NOT invent new text. Only output the cleaned transcript.
+    2. Format the text into readable paragraphs. Если один спикер говорит очень долго (длинный монолог), логически разбивай его речь на несколько читаемых абзацев.
+    3. Обязательно сохраняй оригинальные таймкоды вида [HH.MM.SS] в начале каждой реплики.
+    4. Если ты видишь резкий переход темы и совершенно абсурдный/поэтичный текст посреди разговора, который длится 1-2 абзаца, выделяй его курсивом и подписывай как [Музыкальная вставка/Джингл]. Если текст звучит как цитата другого человека, оформляй его как блок-цитату (>).
+    5. Do NOT invent new text. Only output the cleaned transcript. ВАЖНО: Ни в коем случае не сокращай, не вырезай и не пропускай оригинальные куски текста. Отформатированный MD файл должен содержать полностью весь текст подкаста. Provide ONLY the formatted transcript. Do NOT start with "Here is your transcript" or similar phrases.
+    
+    Here is the transcript:
+    {text}
+
+  # The system prompt telling the AI how to format your text for single-speaker podcasts (monologues).
+  prompt_single_speaker: >
+    Это речь одного человека. Оформи этот текст как полноценную статью. Придумай и расставь логические заголовки (##) и подзаголовки (###). ВАЖНО: сами слова "Заголовок:" или "Подзаголовок:" писать не нужно, используй только решетки и текст заголовка (например: `## Как сохранить форму`).
+    Разбей длинные куски текста на абзацы для удобного чтения. 
+    Обязательно сохраняй ключевые оригинальные таймкоды вида [HH.MM.SS] в начале новых смысловых блоков.
+    Если ты видишь резкий переход темы и совершенно абсурдный/поэтичный текст посреди разговора, который длится 1-2 абзаца, выделяй его курсивом и подписывай как [Музыкальная вставка]. Если текст звучит как цитата другого человека, оформляй его как блок-цитату (>).
+    Do NOT invent new text or facts outside of providing headings. Only output the cleaned transcript. ВАЖНО: Ни в коем случае не сокращай, не вырезай и не пропускай оригинальные куски текста. Отформатированный MD файл должен содержать полностью весь текст подкаста. Provide ONLY the formatted transcript. Do NOT start with "Here is your transcript" or similar phrases.
     
     Here is the transcript:
     {text}
 
   # To prevent context window overflow (e.g. 8k context on Ollama), long transcripts are chunked.
   # Size of each chunk in number of lines (timestamps). 
-  chunk_size_lines: 100
+  chunk_size_lines: 200
   # Number of overlapping lines fed to the AI to maintain dialog continuity between chunks.
   overlap_lines: 10
 
