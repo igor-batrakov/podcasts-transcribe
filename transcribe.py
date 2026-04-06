@@ -191,8 +191,12 @@ def process_podcasts(time_limit=None):
                     progress.remove_task(file_task)
                     progress.update(job_task, advance=1)
                 else:
-                    progress.console.print(f"   ❌ [bold red]Failed to process {base_name}[/]")
-            
+                    progress.console.print(f"   ❌ [bold red]Failed to process {base_name}[/]. See debug_log.txt for details.")
+                    with open("debug_log.txt", "a", encoding="utf-8") as log_f:
+                        log_f.write(f"\n[{datetime.datetime.now()}] ERROR processing {base_name}\n")
+                        import traceback
+                        log_f.write(traceback.format_exc())
+                        log_f.write("-" * 40 + "\n")
             if successfully_processed:
                 progress.update(job_task, description="[cyan]Waiting for background tasks...")
 

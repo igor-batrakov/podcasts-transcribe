@@ -165,18 +165,17 @@ def run_post_processing(transcript_text: str, config: GlobalConfig, is_single_sp
     pp_config = config.post_processing
     if not pp_config.enabled:
         return transcript_text
-
+        
     provider = pp_config.provider.lower()
     model = pp_config.model
-
+    
     if is_single_speaker:
         prompt_template = pp_config.prompt_single_speaker or "Format this single speaker transcript as an article:\n\n{text}"
     else:
         prompt_template = pp_config.prompt_multi_speaker or "Fix punctuation and format this transcript:\n\n{text}"
-
+    
     chunk_size = pp_config.chunk_size_lines
     overlap = pp_config.overlap_lines
-
     
     lines = transcript_text.strip().split("\n")
     total_lines = len(lines)
@@ -190,19 +189,37 @@ def run_post_processing(transcript_text: str, config: GlobalConfig, is_single_sp
             print(f"❌ [LLM] Post-processing failed: {e}")
             return transcript_text
 
-    # Chunking logic for long transcripts
-    print(f"\n🧠 [LLM] Post-processing large transcript ({total_lines} lines) in chunks using '{provider}'...")
+    # Semantic Chunking logic for long transcripts
+    print(f"\n🧠 [LLM] Post-processing large transcript ({total_lines} lines) using '{provider}'...")
     
     final_output = []
-    start_idx = 0
+    current_idx = 0
     chunk_index = 1
     
-    while start_idx < total_lines:
-        end_idx = min(start_idx + chunk_size, total_lines)
-        chunk_lines = lines[start_idx:end_idx]
+    while current_idx < total_lines:
+        target_end = min(current_idx + chunk_size, total_lines)
+        
+        # Look for a good split point (speaker change) near the target_end
+        split_point = target_end
+        if target_end < total_lines:
+            # Look backwards from target_end for up to 'overlap' lines to find a speaker change
+            import re
+            for lookback in range(overlap):
+                check_idx = target_end - lookback
+                if check_idx <= current_idx: break
+                # A new line usually starts with [HH.MM.SS] Speaker:
+                # If the speaker label at check_idx is different from check_idx-1, it's a split point.
+                # However, even just a line break is better than mid-sentence.
+                # For simplicity, we just look for any line start in this range.
+                if check_idx < total_lines:
+                    split_point = check_idx
+                    break
+        
+        chunk_lines = lines[current_idx:split_point]
         chunk_text = "\n".join(chunk_lines)
+        
         import sys
-        sys.stdout.write(f"\n   ⏳ Processing chunk {chunk_index} (lines {start_idx+1}-{end_idx})... ")
+        sys.stdout.write(f"\n   ⏳ Processing chunk {chunk_index} (lines {current_idx+1}-{split_point})... ")
         sys.stdout.flush()
         try:
             processed_chunk = _process_chunk(chunk_text, provider, model, prompt_template)
@@ -211,10 +228,9 @@ def run_post_processing(transcript_text: str, config: GlobalConfig, is_single_sp
             final_output.append(processed_chunk.strip())
         except Exception as e:
             print(f"❌ [LLM] Failed on chunk {chunk_index}: {e}")
-            print("   ⚠️ Keeping original text for this chunk.")
             final_output.append(chunk_text)
             
-        start_idx += (chunk_size - overlap)
+        current_idx = split_point
         chunk_index += 1
         
     return "\n\n".join(final_output)
