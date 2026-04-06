@@ -86,7 +86,13 @@ def convert_to_wav(audio_path, time_limit=None, cache_cfg=None):
     
     # Decode directly into the cache folder
     ffmpeg_cmd.extend(["-i", audio_path, "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", cached_wav])
-    subprocess.run(ffmpeg_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
+    result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        # If conversion failed, remove any partial file
+        if os.path.exists(cached_wav):
+            os.remove(cached_wav)
+        raise RuntimeError(f"FFmpeg conversion failed (code {result.returncode}): {result.stderr}")
     
     # Clean up the cache after adding the new large file
     cleanup_cache(cache_dir, cache_cfg["max_size_mb"], cache_cfg["max_age_days"])

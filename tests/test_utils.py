@@ -7,6 +7,7 @@ def test_get_series_name():
     assert get_series_name("rt_podcast_10.mp3") == "rt_podcast"
     assert get_series_name("rt_podcast1001.wav") == "rt_podcast"
     assert get_series_name("interview_elon_musk.m4a") == "interview_elon_musk"
+    assert get_series_name("123.mp3") == "123"
     assert get_series_name("myshow 05.flac") == "myshow" # Assumes trailing numbers are stripped (current logic splits on digit)
 
 def test_get_unique_filename(tmp_path):

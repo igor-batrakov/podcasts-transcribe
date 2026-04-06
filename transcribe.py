@@ -434,16 +434,6 @@ def process_podcasts(time_limit=None):
                             
                 if insert_speakers:
                     progress.console.print(f"   🧹 [dim]Found {len(insert_speakers)} short insert speakers (<1% duration). Labeling as inserts.[/dim]")
-                    # Cleanup from persistence DB so they dont pollute other episodes
-                    for spk in insert_speakers:
-                        if spk in config_db:
-                            del config_db[spk]
-                        if spk in embeddings_db:
-                            del embeddings_db[spk]
-                    
-                    # Resave cleaned profiles immediately
-                    save_series_config(series_name, config_db)
-                    save_series_embeddings(series_name, embeddings_db)
 
                 progress.update(file_task, description=f"[magenta]{base_name}: Merging text")
                 with open(output_txt, "w", encoding="utf-8") as f:
@@ -477,12 +467,6 @@ def process_podcasts(time_limit=None):
                                 if is_pure_noise or speaker == "UNKNOWN" or speaker == "[UNKNOWN]":
                                     continue
                                 
-                            # Interruption aware speaker resolving
-                            if diarization is None:
-                                speaker = "GLOBAL_SPEAKER_1"
-                            else:
-                                speaker = get_speaker(diarization, start_time, end_time, speaker_mapping)
-                        
                             if not current_speaker:
                                 # Initialization
                                 current_speaker = speaker
