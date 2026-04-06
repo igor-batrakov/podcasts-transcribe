@@ -28,14 +28,12 @@ def test_load_global_config_separates_kwargs(tmp_path, mocker):
         config = load_global_config()
         
         # Verify transcription kwargs only contain root keys
-        assert config["transcription"]["path_or_hf_repo"] == "models/fake-model"
-        assert config["transcription"]["language"] == "ru"
-        assert "enabled" not in config["transcription"]
-        assert "similarity_threshold" not in config["transcription"]
+        assert config.transcription.path_or_hf_repo == "models/fake-model"
+        assert config.transcription.language == "ru"
         
         # Verify other sections
-        assert config["post_processing"]["enabled"] is True
-        assert config["diarization"]["similarity_threshold"] == 0.5
+        assert config.post_processing.enabled is True
+        assert config.diarization.similarity_threshold == 0.5
         
     finally:
         os.chdir(original_cwd)

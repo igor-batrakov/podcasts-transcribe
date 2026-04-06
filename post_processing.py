@@ -81,14 +81,16 @@ def process_with_anthropic(text: str, model: str, prompt_template: str, api_key:
     except Exception as e:
         raise Exception(f"Anthropic API error: {e}")
 
-def extract_podcast_metadata_with_llm(raw_text: str, config: dict) -> dict:
+from schema import GlobalConfig
+
+def extract_podcast_metadata_with_llm(raw_text: str, config: GlobalConfig) -> dict:
     """
     Extracts real speaker names and podcast metadata from the transcript context.
     Returns a dictionary with 'speakers' and 'metadata'.
     """
-    pp_config = config.get("post_processing", {})
-    provider = pp_config.get("provider", "ollama").lower()
-    model = pp_config.get("model", "qwen2.5:3b")
+    pp_config = config.post_processing
+    provider = pp_config.provider.lower()
+    model = pp_config.model
     
     prompt = (
         "Analyze the following Russian transcript excerpt and extract metadata and speaker names. "
@@ -155,31 +157,26 @@ def extract_podcast_metadata_with_llm(raw_text: str, config: dict) -> dict:
         return {"speakers": {}, "metadata": {}}
 
 
-def run_post_processing(transcript_text: str, config: dict, is_single_speaker: bool = False) -> str:
+def run_post_processing(transcript_text: str, config: GlobalConfig, is_single_speaker: bool = False) -> str:
     """
     Main entry point for LLM post-processing.
     Chunks the transcript to avoid context limits and routes to the correct provider.
     """
-    pp_config = config.get("post_processing", {})
-    if not pp_config.get("enabled", False):
+    pp_config = config.post_processing
+    if not pp_config.enabled:
         return transcript_text
-        
-    provider = pp_config.get("provider", "ollama").lower()
-    model = pp_config.get("model", "llama3")
-    
+
+    provider = pp_config.provider.lower()
+    model = pp_config.model
+
     if is_single_speaker:
-        prompt_template = pp_config.get(
-            "prompt_single_speaker", 
-            "Format this single speaker transcript as an article:\n\n{text}"
-        )
+        prompt_template = pp_config.prompt_single_speaker or "Format this single speaker transcript as an article:\n\n{text}"
     else:
-        prompt_template = pp_config.get(
-            "prompt_multi_speaker", 
-            "Fix punctuation and format this transcript:\n\n{text}"
-        )
-    
-    chunk_size = int(pp_config.get("chunk_size_lines", 100))
-    overlap = int(pp_config.get("overlap_lines", 10))
+        prompt_template = pp_config.prompt_multi_speaker or "Fix punctuation and format this transcript:\n\n{text}"
+
+    chunk_size = pp_config.chunk_size_lines
+    overlap = pp_config.overlap_lines
+
     
     lines = transcript_text.strip().split("\n")
     total_lines = len(lines)

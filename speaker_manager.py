@@ -8,8 +8,8 @@ from config_loader import load_global_config
 
 def get_series_dir(series_name):
     """Returns the path to the series settings directory"""
-    paths_cfg = load_global_config().get("paths", {})
-    speakers_dir = paths_cfg.get("speakers_dir", "speakers")
+    paths_cfg = load_global_config().paths
+    speakers_dir = paths_cfg.speakers_dir
     dir_path = os.path.join(speakers_dir, series_name)
     os.makedirs(dir_path, exist_ok=True)
     return dir_path

@@ -45,10 +45,10 @@ class CustomTaskProgressColumn(TaskProgressColumn):
 def process_podcasts(time_limit=None):
     # Load master configuration
     global_config = load_global_config()
-    paths_cfg = global_config.get("paths", {})
+    paths_cfg = global_config.paths
     
-    input_dir = paths_cfg.get("input_dir", "input")
-    output_dir = paths_cfg.get("output_dir", "output")
+    input_dir = paths_cfg.input_dir
+    output_dir = paths_cfg.output_dir
     
     os.makedirs(input_dir, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
@@ -66,16 +66,15 @@ def process_podcasts(time_limit=None):
 
     console.print(f"[bold green]Audio files found to process: {len(audio_files)}[/]")
     
-    whisper_kwargs = global_config["transcription"]
-    diarization_cfg = global_config["diarization"]
-    cache_cfg = global_config.get("cache", {})
-    perf_cfg = global_config.get("performance", {})
-    vad_enabled = perf_cfg.get("vad_enabled", False)
+    whisper_cfg = global_config.transcription
+    diarization_cfg = global_config.diarization
+    cache_cfg = global_config.cache
+    perf_cfg = global_config.performance
+    vad_enabled = perf_cfg.vad_enabled
     
-    
-    similarity_threshold = diarization_cfg.get("similarity_threshold", 0.35)
-    ema_alpha = diarization_cfg.get("ema_alpha", 0.1)
-    auto_merge_duplicates = diarization_cfg.get("auto_merge_duplicates", True)
+    similarity_threshold = diarization_cfg.similarity_threshold
+    ema_alpha = diarization_cfg.ema_alpha
+    auto_merge_duplicates = diarization_cfg.auto_merge_duplicates
     
     console.print("[dim]Settings loaded from config.yaml[/]")
     
@@ -86,10 +85,10 @@ def process_podcasts(time_limit=None):
         mem_gb = mem_bytes / (1024**3)
         if mem_gb <= 18:  # Target 16GB/8GB Macs
             console.print(f"\n[bold yellow]⚠️ Detected {mem_gb:.0f}GB Unified Memory. Activating Low-Memory Optimizations.[/]")
-            perf_cfg["batch_size"] = min(perf_cfg.get("batch_size", 8), 1)  # Force batch size to 1 to save memory
-            perf_cfg["num_workers"] = 0  # Disable multiprocessing workers to save memory
+            perf_cfg.batch_size = 1  # Force batch size to 1 to save memory
+            perf_cfg.num_workers = 0  # Disable multiprocessing workers to save memory
             console.print("   [dim]Disabled Pyannote multiprocess workers and reduced batch_size to 1.[/]")
-            if whisper_kwargs.get("path_or_hf_repo", "").endswith("large-v3-ru-podlodka"):
+            if whisper_cfg.path_or_hf_repo.endswith("large-v3-ru-podlodka"):
                  console.print("   [dim]💡 Tip: You are using the 'large' Whisper model. If it crashes, change it to 'medium' in config.yaml.[/]")
     except Exception:
         pass
@@ -325,8 +324,8 @@ def process_podcasts(time_limit=None):
                     speaker_mapping = {"SPEAKER_00": "GLOBAL_SPEAKER_1"}
                 else:
                     # Apply performance optimization variables
-                    batch_size = perf_cfg.get("batch_size", 8)
-                    num_workers = perf_cfg.get("num_workers", 4)
+                    batch_size = perf_cfg.batch_size
+                    num_workers = perf_cfg.num_workers
                 
                     console.print(f"   [dim]⚡ Using Hardware Acceleration (batch_size={batch_size}, num_workers={num_workers})...[/]")
                 
@@ -347,16 +346,8 @@ def process_podcasts(time_limit=None):
                 
                     if active_speech:
                         console.print("   [dim]🎙️  Applying Diarization only to active speech segments...[/]")
-                        # Provide VAD output as a soft restriction for the diarization pipeline
-                        # Pyannote accepts 'hook' or 'file_hook' via 'hook' param, but the cleanest 
-                        # built-in way to constrain the audio is to pass 'file={"uri":..., "audio":...}' 
-                        # with the precomputed segmentation output if supported by pipeline version.
-                        # For simplicity and robust v3.1 compatibility, we inject it via the __call__ if it takes 'hook' 
-                        # or by relying on internally improved pipeline logic.
                         diarization = diarization_pipeline(
                             temp_wav
-                            # active_speech filtering will be handled implicitly if the pipeline supports it via configuration,
-                            # but Pyannote 3.1 naturally ignores silence internally. Explicit VAD is still useful for statistics.
                         )
                     else:
                         diarization = diarization_pipeline(
@@ -391,6 +382,8 @@ def process_podcasts(time_limit=None):
                 _original_stderr = sys.stderr
                 sys.stderr = open(os.devnull, 'w')
                 try:
+                    from dataclasses import asdict
+                    whisper_kwargs = asdict(whisper_cfg)
                     result = mlx_whisper.transcribe(
                         transcribe_source,
                         verbose=False,
@@ -414,7 +407,7 @@ def process_podcasts(time_limit=None):
                         end_time = segment["end"]
                         text = segment["text"].strip()
                         
-                        skip_noise = global_config.get("processing", {}).get("skip_noise_and_music", False)
+                        skip_noise = global_config.processing.skip_noise_and_music
                         if skip_noise:
                             import re
                             if bool(re.match(r'^[\(\[].*?[\)\]]$', text)):
@@ -460,7 +453,7 @@ def process_podcasts(time_limit=None):
                                     speaker = "[Вставка]"
                         
                             # Fix Pyannote UNKNOWN & Noise brackets
-                            skip_noise = global_config.get("processing", {}).get("skip_noise_and_music", False)
+                            skip_noise = global_config.processing.skip_noise_and_music
                             if skip_noise:
                                 import re
                                 is_pure_noise = bool(re.match(r'^[\(\[].*?[\)\]]$', text))
@@ -513,8 +506,8 @@ def process_podcasts(time_limit=None):
                 # 4. LLM Smart Auto-Naming
                 new_names = {}
                 unidentified_speakers = []
-                auto_naming = global_config.get("diarization", {}).get("auto_naming", False)
-                if auto_naming and global_config.get("post_processing", {}).get("enabled", False):
+                auto_naming = global_config.diarization.auto_naming
+                if auto_naming and global_config.post_processing.enabled:
                     progress.update(file_task, description=f"[magenta]{base_name}: LLM auto-naming & metadata")
                     # Extract roughly the first 15 mins (approx 200 lines) of transcript for context
                     lines_arr = raw_text.split("\n")
@@ -591,7 +584,7 @@ def process_podcasts(time_limit=None):
                          progress.console.print(f"   📝 [dim]Detected single-speaker majority ({max_spk_lines}/{total_speech_lines} lines). Using article formatting...[/]")
 
                 # 6. LLM Post-Processing Polish
-                if global_config.get("post_processing", {}).get("enabled", False):
+                if global_config.post_processing.enabled:
                     formatted_text = run_post_processing(raw_text, global_config, is_single_speaker)
                 
                     # Build Markdown Header
@@ -628,8 +621,8 @@ def process_podcasts(time_limit=None):
                     progress.console.print(f"   ✨ [bold green]LLM formatted transcript saved:[/] {final_output_path}")
                 
                 # Free Ollama memory so it doesn't overlap with Pyannote on the next iteration
-                if global_config.get("post_processing", {}).get("enabled", False) and global_config.get("post_processing", {}).get("provider", "ollama").lower() == "ollama":
-                    unload_ollama_model(global_config.get("post_processing", {}).get("model", "llama3.1"))
+                if global_config.post_processing.enabled and global_config.post_processing.provider.lower() == "ollama":
+                    unload_ollama_model(global_config.post_processing.model)
             
                 t_llm_end = time.time()
                 file_end_time = time.time()
@@ -644,7 +637,7 @@ def process_podcasts(time_limit=None):
                     elif m > 0: return f"{m}m {s}s"
                     else: return f"{s}s"
 
-                hardware_mode = "Hardware Accelerated" if perf_cfg.get("num_workers", 4) > 0 else "Low Memory Mode (<=16GB)"
+                hardware_mode = "Hardware Accelerated" if perf_cfg.num_workers > 0 else "Low Memory Mode (<=16GB)"
                 
                 # Deduplicate speakers reliably directly from the saved file to ensure we don't count unknowns
                 final_speakers = set()
@@ -664,13 +657,13 @@ def process_podcasts(time_limit=None):
                     f"### 🎙️ {base_name}\n"
                     f"**📅 Date:** {now_str}\n"
                     f"**⏳ Audio Duration:** {format_time(total_podcast_duration if 'total_podcast_duration' in locals() else 0)} | "
-                    f"**⏱️ Total Processing Time:** Custom {format_time(file_end_time - file_start_time)}\n\n"
+                    f"**⏱️ Total Processing Time:** {format_time(file_end_time - file_start_time)}\n\n"
                     f"- **⚙️ Hardware Mode:** {hardware_mode}\n"
                     f"- **👥 Speakers Found:** {len(final_speakers)} (Main: {normal_speakers}, Inserts: {insert_speakers_count})\n"
                     f"- **🔉 Conversion to WAV:** {format_time(t_convert_end - t_convert_start)}\n"
                     f"- **🗣️ Diarization** (`{chosen_model}`): {format_time(t_diarization_end - t_diarization_start)}\n"
-                    f"- **📝 Transcription** (`{whisper_kwargs.get('path_or_hf_repo', 'Unknown')}`): {format_time(t_transcribe_end - t_transcribe_start)}\n"
-                    f"- **🤖 Post-processing** (`{global_config.get('post_processing', {}).get('model', 'None')}`): {format_time(t_llm_end - t_llm_start)}\n"
+                    f"- **📝 Transcription** (`{whisper_cfg.path_or_hf_repo}`): {format_time(t_transcribe_end - t_transcribe_start)}\n"
+                    f"- **🤖 Post-processing** (`{global_config.post_processing.model}`): {format_time(t_llm_end - t_llm_start)}\n"
                     "---\n\n"
                 )
 

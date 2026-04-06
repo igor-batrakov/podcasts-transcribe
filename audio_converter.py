@@ -56,12 +56,12 @@ def generate_cache_key(audio_path, time_limit):
     hash_str = f"{abs_path}_{file_stat.st_mtime}_{file_stat.st_size}_{time_limit}"
     return hashlib.md5(hash_str.encode('utf-8')).hexdigest()
 
-from config_loader import load_global_config
+from schema import GlobalConfig, CacheConfig
 
-def convert_to_wav(audio_path, time_limit=None, cache_cfg=None):
+def convert_to_wav(audio_path, time_limit=None, cache_cfg: CacheConfig = None):
     """Converts media to a temporary WAV file with caching"""
     if cache_cfg is None:
-        cache_cfg = load_global_config().get("cache", {})
+        cache_cfg = load_global_config().cache
         
     cache_dir = os.path.join(".cache", "audio")
     os.makedirs(cache_dir, exist_ok=True)
@@ -95,6 +95,6 @@ def convert_to_wav(audio_path, time_limit=None, cache_cfg=None):
         raise RuntimeError(f"FFmpeg conversion failed (code {result.returncode}): {result.stderr}")
     
     # Clean up the cache after adding the new large file
-    cleanup_cache(cache_dir, cache_cfg["max_size_mb"], cache_cfg["max_age_days"])
+    cleanup_cache(cache_dir, cache_cfg.max_size_mb, cache_cfg.max_age_days)
     
     return cached_wav
