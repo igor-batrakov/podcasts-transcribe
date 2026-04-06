@@ -37,14 +37,19 @@
 *   **⚡️ MLX Whisper Транскрибация:** Использует мощную модель `mlx-whisper-large-v3-ru-podlodka`, работающую напрямую на GPU Mac для экстремально быстрой работы. Для других языков: замените модель в `config.yaml` на официальную `mlx-community/whisper-large-v3-mlx`.
 *   **🗣 Кросс-эпизодная память (Pyannote):** Скрипт учится узнавать ведущих. Имена спикеров собираются в `speakers/`. Вручную переименуйте `GLOBAL_SPEAKER_1`, и программа назовет его так же в следующих выпусках (и сольет дубликаты голосов).
 *   **🧠 Умная Постобработка (LLM):** 
-    * Автоматическая пунктуация и абзацы через локальную Ollama (Опционально: OpenAI/Anthropic). Вы можете поменять используемую модель (по умолчанию `qwen2.5:3b`) в `config.yaml` -> `post_processing.model`.
+    * Автоматическая пунктуация и абзацы через локальную Ollama (Опционально: OpenAI/Anthropic).
+    * **Асинхронный пайплайн:** Теперь постобработка текста выполняется в фоновом режиме. Пока один файл оформляется нейросетью, следующий уже начинает транскрибироваться.
+    * **Семантический чанкинг:** Улучшена логика разбиения текста для LLM — программа ищет границы реплик и смены спикеров, чтобы не разрывать предложения.
     * **Умный Заголовок:** Нейросеть сама анализирует начало разговора, доставая название шоу, тему и реальные имена участников, собирая красивый Markdown-заголовок.
     * **Определение муз. вставок:** Скрипт по длительности и контексту автоматически вычисляет "джинглы", скрывая их из основной базы спикеров и помечая курсивом.
 *   **🏎️ Экстремальная оптимизация памяти:**
     * **Авто-лимиты (Mac 16GB):** Программа автоматически отключает мультипроцессинг и снижает пакетную нагрузку, если у вас 16 ГБ ОЗУ или меньше. Ошибок нехватки памяти (OOM) не будет!
     * **Анализ тишины (VAD):** Экономит колоссальное количество времени, вырезая тишину до запуска тяжелой диаризации.
     * **Глобальный конфигуратор:** При старте программа спрашивает, какие настройки применить (Fast/Accurate/Skip), и затем автономно обрабатывает всю папку.
-*   **📊 Прозрачность и Кэширование:** Для каждого аудиофайла дописывается отчет с таймингами обработки в файл `output/processing_report.md`. Вырезанные `.wav` файлы кэшируются для ускорения перезапусков.
+*   **📊 Прозрачность и Кэширование:**
+    * Для каждого аудиофайла дописывается отчет с таймингами обработки в файл `output/processing_report.md`.
+    * **Логирование:** Все ошибки теперь детально записываются в `debug_log.txt`, что позволяет скрипту не останавливаться при сбоях в отдельных файлах.
+    * Вырезанные `.wav` файлы кэшируются для ускорения перезапусков.
 
 ## Лицензия
 
@@ -91,14 +96,19 @@ A heavily-optimized pipeline for automatic podcast transcription, Pyannote-based
 *   **⚡️ MLX Whisper Transcription:** Utilizes the Russian-optimized `mlx-whisper-large-v3-ru-podlodka` running directly on Apple Silicon GPUs. Switch to `mlx-community/whisper-large-v3-mlx` in `config.yaml` for 99+ languages global support.
 *   **🗣 Cross-Episode Voice Memory:** Remembers host voices across episodes. Rename `GLOBAL_SPEAKER_1` to a real name in the `speakers/` folder, and it will cascade to all future runs and auto-merge duplicate voices.
 *   **🧠 Intelligent Post-Processing (LLM):** 
-    * Punctuation and paragraph formatting via local Ollama (OpenAI/Anthropic also supported). You can change the default model (`qwen2.5:3b`) in `config.yaml` -> `post_processing.model`.
+    * Punctuation and paragraph formatting via local Ollama (OpenAI/Anthropic also supported).
+    * **Async Pipeline:** Post-processing now runs in the background. While one file is being polished by the LLM, the next one is already being transcribed.
+    * **Semantic Chunking:** Improved logic for splitting text for LLM — the script respects speaker changes and sentence boundaries.
     * **Smart Markdown Headers:** The LLM auto-extracts podcast names, episode numbers, topics, and speaker introductions to build a beautiful Markdown header document snippet.
     * **Jingle Detection:** Short audio inserts and musical jingles are detected by length and context, formatted beautifully, and kept cleanly out of the global speaker database.
 *   **🏎️ Adaptive Hardware Optimization:**
     * **Low-Memory Safety (16GB Macs):** Automatically disables heavy multiprocessing and lowers batch sizes on Macs with 16GB RAM or less to prevent OOM freezes.
     * **Voice Activity Detection (VAD):** Cuts out entire chunks of silence before intensive processing stages to save massive amounts of GPU time.
     * **Interactive Upfront CLI:** The script asks you once how you want to handle diarization for new files (Fast / Accurate / Skip), then autonomously batch processes everything.
-*   **📊 Transparent Metrics:** Automatically tracks step-by-step execution durations and appends them to an efficiency log (`output/processing_report.md`). Extracted `.wav` audio is smartly LRU cached.
+*   **📊 Transparent Metrics:** 
+    * Automatically tracks step-by-step execution durations and appends them to an efficiency log (`output/processing_report.md`).
+    * **Robust Logging:** All errors are now logged to `debug_log.txt`, allowing the batch process to continue even if a single file fails.
+    * Extracted `.wav` audio is smartly LRU cached.
 
 ## License
 

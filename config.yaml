@@ -128,10 +128,11 @@ post_processing:
     {text}
 
   # To prevent context window overflow (e.g. 8k context on Ollama), long transcripts are chunked.
+  # The script uses semantic chunking: it attempts to split text at speaker changes near the limit.
   # Size of each chunk in number of lines (timestamps). 
   chunk_size_lines: 200
-  # Number of overlapping lines fed to the AI to maintain dialog continuity between chunks.
-  overlap_lines: 10
+  # Number of lines to look back for a semantic split point (speaker change).
+  overlap_lines: 20
 
 # -----------------
 # SYSTEM PATHS (Directories)
