@@ -29,9 +29,10 @@ class TranscriptionPipeline:
         self.transcription_engine = TranscriptionEngine(config.transcription)
         self.diarization_engine = DiarizationEngine(config.diarization)
         
-    def process_file(self, audio_path: str, series_name: str, chosen_model: str, base_name: str, output_txt: str, time_limit: Optional[int] = None) -> bool:
-        """Processes a single audio file through the full pipeline."""
+    def process_file(self, audio_path: str, series_name: str, chosen_model: str, base_name: str, output_txt: str, time_limit: Optional[int] = None, executor=None) -> bool:
+        """Processes a single audio file. If executor is provided, LLM part runs in background."""
         try:
+            # --- PART 1: HEAVY GPU/CPU PROCESSING (Sequential) ---
             # 1. Setup & Initial Cleanup
             config_db = load_series_config(series_name)
             embeddings_db = load_series_embeddings(series_name)
@@ -93,18 +94,37 @@ class TranscriptionPipeline:
             if self.progress_callback: self.progress_callback(f"{base_name}: Merging text")
             
             total_podcast_duration, insert_speakers = self._analyze_inserts(result, diarization, speaker_mapping, config_db, embeddings_db, series_name)
-            
             raw_text = self._merge_segments(result, diarization, speaker_mapping, insert_speakers)
             
             with open(output_txt, "w", encoding="utf-8") as f:
                 f.write(raw_text)
-                
-            # 6. LLM Post-Processing (Auto-naming, Formatting)
-            t_llm_start = time.time()
-            podcast_metadata = {}
+
+            # --- PART 2: LLM POST-PROCESSING (Potentially Background) ---
+            gpu_timings = (file_start_time, t_convert_start, t_convert_end, t_diarization_start, t_diarization_end, t_transcribe_start, t_transcribe_end)
             
+            if executor:
+                if self.progress_callback: self.progress_callback(f"{base_name}: LLM task queued")
+                executor.submit(self._run_llm_and_report, raw_text, config_db, series_name, base_name, total_podcast_duration, gpu_timings, chosen_model, output_txt, insert_speakers)
+            else:
+                self._run_llm_and_report(raw_text, config_db, series_name, base_name, total_podcast_duration, gpu_timings, chosen_model, output_txt, insert_speakers)
+                
+            return True
+            
+        except Exception as e:
+            print(f"   ❌ [Pipeline Error] {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def _run_llm_and_report(self, raw_text, config_db, series_name, base_name, total_podcast_duration, gpu_timings, chosen_model, output_txt, insert_speakers):
+        """Runs LLM processing and writes the final report. Can be run in background."""
+        try:
+            (file_start_time, t_convert_start, t_convert_end, t_diarization_start, t_diarization_end, t_transcribe_start, t_transcribe_end) = gpu_timings
+            t_llm_start = time.time()
+            
+            # Auto-naming
+            podcast_metadata = {}
             if self.config.diarization.auto_naming and self.config.post_processing.enabled:
-                if self.progress_callback: self.progress_callback(f"{base_name}: LLM auto-naming")
                 lines_arr = raw_text.split("\n")
                 context_chunk = "\n".join(lines_arr[:200])
                 extracted_data = extract_podcast_metadata_with_llm(context_chunk, self.config)
@@ -114,18 +134,14 @@ class TranscriptionPipeline:
                     podcast_metadata = extracted_data.get("metadata", {})
                     updated_count = self._apply_auto_names(extracted_speakers, config_db, series_name)
                     if updated_count > 0:
-                         # Refresh names in memory
                          for spk_key, human_name in config_db.items():
                              if spk_key.startswith("GLOBAL_SPEAKER_") and human_name != spk_key:
                                   raw_text = raw_text.replace(spk_key, human_name)
             
-            # Final text cleanup and formatting
+            # Post-processing
             is_single_speaker = self._is_single_speaker(raw_text, chosen_model)
-            
             if self.config.post_processing.enabled:
-                if self.progress_callback: self.progress_callback(f"{base_name}: LLM post-process")
                 formatted_text = run_post_processing(raw_text, self.config, is_single_speaker)
-                
                 header_str = self._generate_markdown_header(podcast_metadata, config_db)
                 final_text = header_str + "\n\n" + formatted_text
                 
@@ -139,19 +155,12 @@ class TranscriptionPipeline:
             t_llm_end = time.time()
             file_end_time = time.time()
             
-            # 7. Reporting
             self._write_report(base_name, total_podcast_duration, file_end_time - file_start_time, 
                                t_convert_end - t_convert_start, t_diarization_end - t_diarization_start, 
                                t_transcribe_end - t_transcribe_start, t_llm_end - t_llm_start, 
                                chosen_model, output_txt, insert_speakers)
-            
-            return True
-            
         except Exception as e:
-            print(f"   ❌ [Pipeline Error] {e}")
-            import traceback
-            traceback.print_exc()
-            return False
+            print(f"   ❌ [LLM Background Error] {base_name}: {e}")
 
     def _analyze_inserts(self, result, diarization, speaker_mapping, config_db, embeddings_db, series_name) -> Tuple[float, Set[str]]:
         total_podcast_duration = 0.0

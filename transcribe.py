@@ -156,6 +156,8 @@ def process_podcasts(time_limit=None):
     # --- PHASE 3: EXECUTION ---
     console.rule("[bold cyan]Phase 3: Audio Processing Execution")
     
+    from concurrent.futures import ThreadPoolExecutor
+    
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -172,17 +174,27 @@ def process_podcasts(time_limit=None):
         )
         
         successfully_processed = []
-        for audio_path, series_name, chosen_model, base_name, output_txt in files_to_process:
-            file_task = progress.add_task(f"[magenta]{base_name}: Starting...", total=None)
+        
+        # Using 1 worker for LLM to avoid overwhelming local Ollama or API limits, 
+        # but allowing it to run in background while GPU is busy with the next file.
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            for audio_path, series_name, chosen_model, base_name, output_txt in files_to_process:
+                file_task = progress.add_task(f"[magenta]{base_name}: Starting...", total=None)
+                
+                success = pipeline.process_file(
+                    audio_path, series_name, chosen_model, base_name, output_txt, 
+                    time_limit, executor=executor
+                )
+                
+                if success:
+                    successfully_processed.append(audio_path)
+                    progress.remove_task(file_task)
+                    progress.update(job_task, advance=1)
+                else:
+                    progress.console.print(f"   ❌ [bold red]Failed to process {base_name}[/]")
             
-            success = pipeline.process_file(audio_path, series_name, chosen_model, base_name, output_txt, time_limit)
-            
-            if success:
-                successfully_processed.append(audio_path)
-                progress.remove_task(file_task)
-                progress.update(job_task, advance=1)
-            else:
-                progress.console.print(f"   ❌ [bold red]Failed to process {base_name}[/]")
+            if successfully_processed:
+                progress.update(job_task, description="[cyan]Waiting for background tasks...")
 
     if successfully_processed:
         if console.input(f"\n[bold]Delete {len(successfully_processed)} original media files? [Y/N]: ").strip().upper() == 'Y':
